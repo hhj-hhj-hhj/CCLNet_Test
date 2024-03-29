@@ -4,7 +4,7 @@ This is Official Repository for "Unveiling the Power of CLIP in Unsupervised Vis
 
 
 ### Update Time
--- 2024-03-29 We release code about "RegDB" to github.
+-- 2024-03-29 We release code about "RegDB" to github. <br>
 -- 2023-11-19 We release the code to github.
 
 ### Method
