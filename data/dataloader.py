@@ -320,8 +320,81 @@ class Unlabeld_RegDBData(data.Dataset):
         else:
             print('error len!')
 
+class Unlabeld_RegDBData_Pseudo(data.Dataset):
+    def __init__(self, data_dir, trial, transform, rgb_cluster=False, ir_cluster=False):
+        # Load training images (path) and labels
+        data_dir = data_dir
+        train_color_list = data_dir + 'idx/train_visible_{}'.format(trial) + '.txt'
+        train_thermal_list = data_dir + 'idx/train_thermal_{}'.format(trial) + '.txt'
 
-class RegDBData_nosk(data.Dataset):
+        color_img_file, _ = load_data(train_color_list)
+        thermal_img_file, _ = load_data(train_thermal_list)
+
+        train_color_image = []
+        train_color_path = []
+        for i in range(len(color_img_file)):
+            img_path = os.path.join(data_dir, color_img_file[i])
+            img = Image.open(data_dir + color_img_file[i])
+            img = img.resize((144, 288), Image.ANTIALIAS)
+            pix_array = np.array(img)
+            train_color_image.append(pix_array)
+            train_color_path.append(img_path)
+        train_color_image = np.array(train_color_image)
+
+        train_thermal_image = []
+        train_thermal_path = []
+        for i in range(len(thermal_img_file)):
+            img_path = os.path.join(data_dir, thermal_img_file[i])
+            img = Image.open(data_dir + thermal_img_file[i])
+            img = img.resize((144, 288), Image.ANTIALIAS)
+            pix_array = np.array(img)
+            train_thermal_image.append(pix_array)
+            train_thermal_path.append(img_path)
+        train_thermal_image = np.array(train_thermal_image)
+
+        # BGR to RGB
+        self.train_color_image = train_color_image
+        self.train_color_label = np.load(data_dir+'train_rgb_resized_pseudo_label.npy')
+        self.train_color_path = train_color_path
+        self.color_img_file = color_img_file
+
+        # BGR to RGB
+        self.train_thermal_image = train_thermal_image
+        self.train_thermal_label = np.load(data_dir+'train_ir_resized_pseudo_label.npy')
+        self.train_thermal_path = train_thermal_path
+        self.thermal_img_file = thermal_img_file
+
+        self.transform = transform
+        self.rgb_cluster = rgb_cluster
+        self.ir_cluster = ir_cluster
+
+
+    def __getitem__(self, index):
+        if self.rgb_cluster:
+            img1, target1, path1 = self.train_color_image[index], self.train_color_label[index], self.train_color_path[index]
+            img1 = self.transform(img1)
+            return img1, target1, path1, "RGB"
+
+        elif self.ir_cluster:
+            img2, target2, path2 = self.train_thermal_image[index], self.train_thermal_label[index], self.train_thermal_path[index]
+            img2 = self.transform(img2)
+            return img2, target2, path2, "IR"
+
+        else:
+            print('error getitem!')
+
+    def __len__(self):
+        if self.rgb_cluster:
+            return len(self.train_color_image)
+
+        elif self.ir_cluster:
+            return len(self.train_thermal_image)
+
+        else:
+            print('error len!')
+
+
+class RegDBData_Stage0(data.Dataset):
     def __init__(self, data_dir, trial, pseudo_labels_rgb=None, pseudo_labels_ir=None, transform_train_rgb=None, transform_train_ir=None, colorIndex=None, thermalIndex=None):
         # Load training images (path) and labels
         data_dir = data_dir
@@ -357,23 +430,99 @@ class RegDBData_nosk(data.Dataset):
 
         # BGR to RGB
         self.train_color_image = train_color_image
-        self.train_color_label = np.array(pseudo_labels_rgb)
+        self.train_color_pseudo_label = np.array(pseudo_labels_rgb)
         # self.train_color_label = train_color_label
         self.train_color_path = train_color_path
 
         # BGR to RGB
         self.train_thermal_image = train_thermal_image
-        self.train_thermal_label = np.asarray(pseudo_labels_ir)
+        self.train_thermal_pseudo_label = np.asarray(pseudo_labels_ir)
         # self.train_thermal_label = train_thermal_label
         self.train_thermal_path = train_thermal_path
 
-        mask_color = mask_outlier(self.train_color_label)
+        mask_color = mask_outlier(self.train_color_pseudo_label)
         self.train_color_image = self.train_color_image[mask_color]
+        self.train_color_pseudo_label = self.train_color_pseudo_label[mask_color]
+        self.train_color_path = self.train_color_path[mask_color]
+
+        mask_thermal = mask_outlier(self.train_thermal_pseudo_label)
+        self.train_thermal_image = self.train_thermal_image[mask_thermal]
+        self.train_thermal_pseudo_label = self.train_thermal_pseudo_label[mask_thermal]
+        self.train_thermal_path = self.train_thermal_path[mask_thermal]
+
+        self.transform_train_rgb = transform_train_rgb
+        self.transform_train_ir = transform_train_ir
+        self.cIndex = colorIndex
+        self.tIndex = thermalIndex
+
+
+    def __getitem__(self, index):
+
+        img1, target1 = self.train_color_image[self.cIndex[index]], self.train_color_pseudo_label[self.cIndex[index]]
+        img2, target2 = self.train_thermal_image[self.tIndex[index]], self.train_thermal_pseudo_label[self.tIndex[index]]
+        img1 = self.transform_train_rgb(img1)
+        img2 = self.transform_train_ir(img2)
+
+        return img1, img2, target1, target2
+
+    def __len__(self):
+        return len(self.train_color_label)
+    
+class RegDBData_Stage2(data.Dataset):
+    def __init__(self, data_dir, trial, pseudo_labels_rgb=None, pseudo_labels_ir=None, transform_train_rgb=None, transform_train_ir=None, colorIndex=None, thermalIndex=None):
+        # Load training images (path) and labels
+        data_dir = data_dir
+        train_color_list = data_dir + 'idx/train_visible_{}'.format(trial) + '.txt'
+        train_thermal_list = data_dir + 'idx/train_thermal_{}'.format(trial) + '.txt'
+
+        color_img_file, _ = load_data(train_color_list)
+        thermal_img_file, _ = load_data(train_thermal_list)
+
+        train_color_image = []
+        train_color_path = []
+        for i in range(len(color_img_file)):
+            img_path = os.path.join(data_dir, color_img_file[i])
+            img = Image.open(data_dir + color_img_file[i])
+            img = img.resize((144, 288), Image.ANTIALIAS)
+            pix_array = np.array(img)
+            train_color_image.append(pix_array)
+            train_color_path.append(img_path)
+        train_color_image = np.array(train_color_image)
+        train_color_path = np.array(train_color_path)
+
+        train_thermal_image = []
+        train_thermal_path = []
+        for i in range(len(thermal_img_file)):
+            img_path = os.path.join(data_dir, thermal_img_file[i])
+            img = Image.open(data_dir + thermal_img_file[i])
+            img = img.resize((144, 288), Image.ANTIALIAS)
+            pix_array = np.array(img)
+            train_thermal_image.append(pix_array)
+            train_thermal_path.append(img_path)
+        train_thermal_image = np.array(train_thermal_image)
+        train_thermal_path = np.array(train_thermal_path)
+
+        # BGR to RGB
+        self.train_color_image = train_color_image
+        self.train_color_pseudo_label = np.array(pseudo_labels_rgb)
+        self.train_color_label = np.load(data_dir+'pseudo_labels/'+'train_rgb_resized_pseudo_label.npy')
+        self.train_color_path = train_color_path
+
+        # BGR to RGB
+        self.train_thermal_image = train_thermal_image
+        self.train_thermal_pseudo_label = np.asarray(pseudo_labels_ir)
+        self.train_thermal_label = np.load(data_dir+'pseudo_labels/'+'train_ir_resized_pseudo_label.npy')
+        self.train_thermal_path = train_thermal_path
+
+        mask_color = mask_outlier(self.train_color_pseudo_label)
+        self.train_color_image = self.train_color_image[mask_color]
+        self.train_color_pseudo_label = self.train_color_pseudo_label[mask_color]
         self.train_color_label = self.train_color_label[mask_color]
         self.train_color_path = self.train_color_path[mask_color]
 
-        mask_thermal = mask_outlier(self.train_thermal_label)
+        mask_thermal = mask_outlier(self.train_thermal_pseudo_label)
         self.train_thermal_image = self.train_thermal_image[mask_thermal]
+        self.train_thermal_pseudo_label = self.train_thermal_pseudo_label[mask_thermal]
         self.train_thermal_label = self.train_thermal_label[mask_thermal]
         self.train_thermal_path = self.train_thermal_path[mask_thermal]
 
@@ -385,15 +534,16 @@ class RegDBData_nosk(data.Dataset):
 
     def __getitem__(self, index):
 
-        img1, target1 = self.train_color_image[self.cIndex[index]], self.train_color_label[self.cIndex[index]]
-        img2, target2 = self.train_thermal_image[self.tIndex[index]], self.train_thermal_label[self.tIndex[index]]
+        img1, target1, target1_old = self.train_color_image[self.cIndex[index]], self.train_color_pseudo_label[self.cIndex[index]], self.train_color_label[self.cIndex[index]]
+        img2, target2, target2_old = self.train_thermal_image[self.tIndex[index]], self.train_thermal_pseudo_label[self.tIndex[index]], self.train_thermal_label[self.tIndex[index]]
         img1 = self.transform_train_rgb(img1)
         img2 = self.transform_train_ir(img2)
 
-        return img1, img2, target1, target2
+        return img1, img2, target1, target2, target1_old, target2_old
 
     def __len__(self):
         return len(self.train_color_label)
+
 
 class IterLoader:
     def __init__(self, loader, length=None):
