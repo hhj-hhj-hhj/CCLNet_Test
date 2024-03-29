@@ -4,6 +4,7 @@ This is Official Repository for "Unveiling the Power of CLIP in Unsupervised Vis
 
 
 ### Update Time
+-- 2024-03-29 We release code about "RegDB" to github.
 -- 2023-11-19 We release the code to github.
 
 ### Method
@@ -39,27 +40,35 @@ pip install faiss-gpu
    - run `python data/process.py` to pepare the dataset, the training data will be stored in ".npy" format.
 
 ### Training
-We train all models in NVIDIA RTX A6000, you can set batchsize into 4persons(batch_size) 12photos/8photos(num_instances) in config/xx.yaml if CUDA out of memory.
-```
-cd CCLNet
-mkdir save/logs
-mkdir save/checkpoints
-```
 
 For example, if you want to run CCLNet for the SYSU-MM01, you need to train a model to get pseudo_labels for later CLIP training.
 
 ```
-CUDA_VISIBLE_DEVICES=0 python train_prepare.py
+For SYSU-MM01:
+CUDA_VISIBLE_DEVICES=0 python train_prepare_sysu.py
+For RegDB:
+CUDA_VISIBLE_DEVICES=0 python train_prepare_regdb.py
 ```
 This will get a model(without L_it2ce) and two modal pseudo_lables(two '.npy' format files in you DataSet dir).
 
-Later you have to train again, so you need to ensure that the dataset folder contains the pseudo-label file generated in the previous step, or you can download the [pseudo_labels](https://drive.google.com/drive/folders/1Ysl8tHZ1ZmKlFXnuJHWBZJ9Giel0Q6nZ?usp=drive_link) we trained into '/SYSU-MM01/pseudo_labels/train_xx_resized_pseudo_label.npy'. You have to run:
+Later you have to train again, so you need to ensure that the dataset folder contains the pseudo-label file generated in the previous step, or you can download the pseudo we trained into your dataset.
+
+For SYSU-MM01:[pseudo_labels_sysu](https://drive.google.com/drive/folders/1Ysl8tHZ1ZmKlFXnuJHWBZJ9Giel0Q6nZ?usp=drive_link)
+
+For RegDB:[pseudo_labels_regdb](https://drive.google.com/drive/folders/1porzH8N5rVPB-7R2xo3AEdD3whly0w8Z?usp=drive_link)
+You have to run:
 ```
 mkdir /dataset/SYSU-MM01/pseudo_labels/
 download '.npy' into /dataset/SYSU-MM01/pseudo_labels/
 
-# training
-CUDA_VISIBLE_DEVICES=0 python train_clip.py 
+mkdir /dataset/RegDB/pseudo_labels/
+download '.npy' into /dataset/RegDB/pseudo_labels/
+
+# training (For SYSU-MM01)
+CUDA_VISIBLE_DEVICES=0 python train_clip_sysu.py 
+
+# training (For RegDB)
+CUDA_VISIBLE_DEVICES=0 python train_clip_regdb.py 
 ```
 
 ### Evaluation
@@ -67,7 +76,7 @@ CUDA_VISIBLE_DEVICES=0 python train_clip.py
 For example, if you want to test CCLNet for SYSU-MM01, you have to run:
 
 ```
-CUDA_VISIBLE_DEVICES=0 python test.py --resume_path 'checkpoints/model_best.pth'
+CUDA_VISIBLE_DEVICES=0 python test.py --dataset 'regdb' --resume_path 'checkpoints/model_best.pth'
 ```
 
 ### Acknowledgement
@@ -77,8 +86,9 @@ Codebase from [CLIP](https://github.com/openai/CLIP)[1], [CoOp](https://github.c
 ### Trained models
 | Settings                    | Pretrained | Loss | Rank@1 | mAP | Model(pth)                 |
 |-----------------------------|------------|---|--------|-----|-----------------------|
-| SYSU-MM01(train_prepare.py) | CLIP     | L_qr+L_qt | ~50.02%     | ~45.52%  | [model_perpare.pth](https://drive.google.com/file/d/1mK41qVbKmWHQLgfSPijk0RYDrWVJdOsG/view?usp=drive_link) |
-| SYSU-MM01(train_clip.py)    | CLIP     | L_qr+L_qt+L_i2tce  | ~55.31%     | ~50.38%  | [model_best.pth](https://drive.google.com/file/d/1-qniQHrgmVYxERh62hacV0Kt07y_sZuU/view?usp=drive_link) |
+| SYSU-MM01(train_prepare.py) | CLIP     | L_qr+L_qt | ~50.02%     | ~45.52%  | [model_perpare_sysu.pth](https://drive.google.com/file/d/1mK41qVbKmWHQLgfSPijk0RYDrWVJdOsG/view?usp=drive_link) |
+| SYSU-MM01(train_clip_sysu.py)    | CLIP     | L_qr+L_qt+L_i2tce  | ~55.31%     | ~50.38%  | [model_best_sysu.pth](https://drive.google.com/file/d/1-qniQHrgmVYxERh62hacV0Kt07y_sZuU/view?usp=drive_link) |
+| RegDB-trial1(train_clip_regdb.py) | CLIP     | L_qr+L_qt+L_i2tce  | ~71.94%     | ~67.63%  | [model_best_regdb_trial1.pth](https://drive.google.com/file/d/1F8Hh-6J4Va0YI8uA7HWpi-oLC2CW7-MS/view?usp=drive_link) |
 
 ### 4.Citation
 

@@ -231,7 +231,7 @@ if __name__ == "__main__":
     parser.add_argument('--workers', type=int, default=4)
     parser.add_argument("--resume", action="store_true", default=True, help="resume from checkpoint")
     parser.add_argument("--resume_path", type=str, metavar='PATH',
-                        default="/home/cz/projects/checkpoint_mm/clippro/clip_pro_add.pth", help="checkpoint path")
+                        default="", help="checkpoint path")
     parser.add_argument('--seed', type=int, default=1)
 
     working_dir = os.path.dirname(os.path.abspath(__file__))
