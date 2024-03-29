@@ -72,8 +72,8 @@ stage2_warmup_method: 'linear'
 stage2_ims_per_batch: 128
 
 #log path
-logs_dir: save/logs/
+logs_dir: save/logs/sysu/
 logs_time: 23-11-19
-logs_file: uploadgithub_test
+logs_file: uploadgithub_test_sysu
 vis_log_dir: save/logs/vis_log/
 model_path: save/checkpoints/
