@@ -44,7 +44,7 @@ seed: 1
 print_freq: 10
 temp: 0.05
 save_epoch: 10
-eval_step: 1
+eval_step: 5
 use_hard: False
 
 #stage1:
