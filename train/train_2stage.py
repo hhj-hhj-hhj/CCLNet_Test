@@ -27,7 +27,8 @@ from util.utils import AverageMeter
 
 from ClusterContrast.cm import ClusterMemory
 from data.data_manager import process_query_sysu, process_gallery_sysu
-from data.dataloader import SYSUData_Stage2, IterLoader, TestData
+from data.data_manager import process_test_regdb
+from data.dataloader import SYSUData_Stage2, RegDBData_Stage2, IterLoader, TestData
 from util.eval import tester
 from util.utils import IdentitySampler_nosk, GenIdx
 
@@ -58,25 +59,42 @@ def do_train_stage2(args,
     start_time = time.monotonic()
 
     normalizer = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-    transform_train_rgb = transforms.Compose([
+    if args.dataset == 'sysu':
+        transform_train_rgb = transforms.Compose([
+            transforms.ToPILImage(),
+            transforms.RandomGrayscale(p=0.5),
+            transforms.RandomHorizontalFlip(p=0.5),
+            transforms.Pad(10),
+            transforms.RandomCrop((args.img_h, args.img_w)),
+            transforms.ToTensor(),
+            normalizer,
+            transforms.RandomErasing(p=0.5)
+        ])
+        transform_train_ir = transforms.Compose([
+            transforms.ToPILImage(),
+            transforms.RandomHorizontalFlip(p=0.5),
+            transforms.Pad(10),
+            transforms.RandomCrop((args.img_h, args.img_w)),
+            transforms.ToTensor(),
+            normalizer,
+            transforms.RandomErasing(p=0.5),
+        ])
+    else:
+        transform_train_rgb = transforms.Compose([
         transforms.ToPILImage(),
         transforms.RandomGrayscale(p=0.5),
-        transforms.RandomHorizontalFlip(p=0.5),
-        transforms.Pad(10),
-        transforms.RandomCrop((args.img_h, args.img_w)),
-        transforms.ToTensor(),
-        normalizer,
-        transforms.RandomErasing(p=0.5)
-    ])
-    transform_train_ir = transforms.Compose([
-        transforms.ToPILImage(),
-        transforms.RandomHorizontalFlip(p=0.5),
-        transforms.Pad(10),
-        transforms.RandomCrop((args.img_h, args.img_w)),
+        transforms.Resize((args.img_h, args.img_w)),
         transforms.ToTensor(),
         normalizer,
         transforms.RandomErasing(p=0.5),
-    ])
+        ])
+        transform_train_ir = transforms.Compose([
+            transforms.ToPILImage(),
+            transforms.Resize((args.img_h, args.img_w)),
+            transforms.ToTensor(),
+            normalizer,
+            transforms.RandomErasing(p=0.5),
+        ])
     transform_test = transforms.Compose([
         transforms.ToPILImage(),
         transforms.Resize((args.img_h, args.img_w)),
@@ -181,9 +199,15 @@ def do_train_stage2(args,
 
         del features_rgb, features_ir, cluster_loader_rgb, cluster_loader_ir, rerank_dist_rgb, rerank_dist_ir
 
+        if args.dataset == 'regdb' and epoch == args.base_epoch:
+            optimizer = make_optimizer_2stage_later(args, model)
+            scheduler = WarmupMultiStepLR(optimizer, args.stage2_steps, args.stage2_gamma, args.stage2_warmup_factor,
+                                                args.stage2_warmup_iters, args.stage2_warmup_method)
+
         if epoch >= args.base_epoch:
             change_scale = args.change_scale
             print('----------Start Memory(rgb and ir) Change!----------')
+            
         else:
             change_scale = 1.
 
@@ -195,7 +219,11 @@ def do_train_stage2(args,
 
         # generate new dataset
         end = time.time()
-        trainset = SYSUData_Stage2(args.data_path, pseudo_labels_rgb, pseudo_labels_ir, transform_train_rgb,
+        if args.dataset == 'sysu':
+            trainset = SYSUData_Stage2(args.data_path, pseudo_labels_rgb, pseudo_labels_ir, transform_train_rgb,
+                                 transform_train_ir)
+        else:
+            trainset = RegDBData_Stage2(args.data_path, args.trial, pseudo_labels_rgb, pseudo_labels_ir, transform_train_rgb,
                                  transform_train_ir)
         print("New Dataset Information---- ")
         print("  ----------------------------")
@@ -266,60 +294,99 @@ def do_train_stage2(args,
             losses_i2t_ir.update(loss_i2t_ir.item())
             losses.update(loss.item())
             torch.cuda.synchronize()
-            if n_iter % 100 == 0:
+            if n_iter % args.print_freq == 0:
                 print("Epoch[{}] Iteration[{}/{}], Loss_rgb_ir_i2t: ({:.3f})({:.3f})({:.3f})({:.3f}) ({:.3f}), Base Lr: {:.2e}"
                  .format(epoch, (n_iter + 1), len(trainloader), losses_rgb.avg, losses_ir.avg,
                          losses_i2t_rgb.avg, losses_i2t_ir.avg, losses.avg,scheduler.get_lr()[0]))
 
         if epoch % args.eval_step == 0 or (epoch == args.stage2_maxepochs):
-            print('Test Epoch: {}'.format(epoch))
-            test_mode = [1, 2]
-            query_img, query_label, query_cam = process_query_sysu(args.data_path, mode=args.mode)
-            queryset = TestData(query_img, query_label, transform=transform_test, img_size=(args.img_w, args.img_h))
-            query_loader = data.DataLoader(queryset, batch_size=args.test_batch_size, shuffle=False, num_workers=args.workers)
+            if args.dataset == 'sysu':
+                print('Test Epoch: {}'.format(epoch))
+                test_mode = [1, 2]
+                query_img, query_label, query_cam = process_query_sysu(args.data_path, mode=args.mode)
+                queryset = TestData(query_img, query_label, transform=transform_test, img_size=(args.img_w, args.img_h))
+                query_loader = data.DataLoader(queryset, batch_size=args.test_batch_size, shuffle=False, num_workers=args.workers)
 
-            for trial in range(10):
-                # print('-------test trial {}-------'.format(trial))
-                gall_img, gall_label, gall_cam = process_gallery_sysu(args.data_path, mode=args.mode, trial=trial)
+                for trial in range(10):
+                    # print('-------test trial {}-------'.format(trial))
+                    gall_img, gall_label, gall_cam = process_gallery_sysu(args.data_path, mode=args.mode, trial=trial)
+                    gallset = TestData(gall_img, gall_label, transform=transform_test, img_size=(args.img_w, args.img_h))
+                    gall_loader = data.DataLoader(gallset, batch_size=args.test_batch_size, shuffle=False, num_workers=args.workers)
+
+                    cmc, mAP, mINP = tester(args, epoch, model, test_mode, gall_label, gall_loader, query_label, query_loader,
+                                            feat_dim=2048,
+                                            query_cam=query_cam, gall_cam=gall_cam)
+
+                    if trial == 0:
+                        all_cmc = cmc
+                        all_mAP = mAP
+                        all_mINP = mINP
+                    else:
+                        all_cmc = all_cmc + cmc
+                        all_mAP = all_mAP + mAP
+                        all_mINP = all_mINP + mINP
+
+                cmc = all_cmc / 10
+                mAP = all_mAP / 10
+                mINP = all_mINP / 10
+                print(
+                    "Performance[ALL]: Rank-1: {:.2%} | Rank-5: {:.2%} | Rank-10: {:.2%}| Rank-20: {:.2%}| mAP: {:.2%}| mINP: {:.2%}".format(
+                        cmc[0], cmc[4],
+                        cmc[9], cmc[19],
+                        mAP, mINP))
+
+                if cmc[0] > best_acc:
+                    best_acc = cmc[0]
+                    best_epoch = epoch
+                    best_mAP = mAP
+                    best_mINP = mINP
+                    state = {
+                        "state_dict": model.state_dict(),
+                        "cmc": cmc,
+                        "mAP": mAP,
+                        "mINP": mINP,
+                        "epoch": epoch,
+                    }
+                    torch.save(state, os.path.join(args.model_path, args.logs_file + "_stage2.pth"))
+                print("Best Epoch [{}], Rank-1: {:.2%} |  mAP: {:.2%}| mINP: {:.2%}".format(best_epoch, best_acc, best_mAP, best_mINP))
+            elif args.dataset == 'regdb':
+                print('Test Epoch: {}'.format(epoch))
+
+                query_img, query_label = process_test_regdb(img_dir=args.data_path, trial=args.trial, modal='visible')
+                gall_img, gall_label = process_test_regdb(img_dir=args.data_path, trial=args.trial, modal='thermal')
+
+                test_mode = [2, 1]
                 gallset = TestData(gall_img, gall_label, transform=transform_test, img_size=(args.img_w, args.img_h))
+                queryset = TestData(query_img, query_label, transform=transform_test, img_size=(args.img_w, args.img_h))
+
+                # testing data loader
                 gall_loader = data.DataLoader(gallset, batch_size=args.test_batch_size, shuffle=False, num_workers=args.workers)
+                query_loader = data.DataLoader(queryset, batch_size=args.test_batch_size, shuffle=False, num_workers=args.workers)
 
                 cmc, mAP, mINP = tester(args, epoch, model, test_mode, gall_label, gall_loader, query_label, query_loader,
-                                        feat_dim=2048,
-                                        query_cam=query_cam, gall_cam=gall_cam)
+                                        feat_dim=2048)
 
-                if trial == 0:
-                    all_cmc = cmc
-                    all_mAP = mAP
-                    all_mINP = mINP
-                else:
-                    all_cmc = all_cmc + cmc
-                    all_mAP = all_mAP + mAP
-                    all_mINP = all_mINP + mINP
-
-            cmc = all_cmc / 10
-            mAP = all_mAP / 10
-            mINP = all_mINP / 10
-            print(
-                "Performance[ALL]: Rank-1: {:.2%} | Rank-5: {:.2%} | Rank-10: {:.2%}| Rank-20: {:.2%}| mAP: {:.2%}| mINP: {:.2%}".format(
-                    cmc[0], cmc[4],
-                    cmc[9], cmc[19],
-                    mAP, mINP))
-
-            if cmc[0] > best_acc:
-                best_acc = cmc[0]
-                best_epoch = epoch
-                best_mAP = mAP
-                best_mINP = mINP
-                state = {
-                    "state_dict": model.state_dict(),
-                    "cmc": cmc,
-                    "mAP": mAP,
-                    "mINP": mINP,
-                    "epoch": epoch,
-                }
-                torch.save(state, os.path.join(args.model_path, args.logs_file + "_stage2.pth"))
-            print("Best Epoch [{}], Rank-1: {:.2%} |  mAP: {:.2%}| mINP: {:.2%}".format(best_epoch, best_acc, best_mAP, best_mINP))
+                print(
+                    "Performance[ALL]: Rank-1: {:.2%} | Rank-5: {:.2%} | Rank-10: {:.2%}| Rank-20: {:.2%}| mAP: {:.2%}| mINP: {:.2%}".format(
+                        cmc[0], cmc[4],
+                        cmc[9], cmc[19],
+                        mAP, mINP))
+                if cmc[0] > best_acc:
+                    best_acc = cmc[0]
+                    best_epoch = epoch
+                    best_mAP = mAP
+                    best_mINP = mINP
+                    state = {
+                        "state_dict": model.state_dict(),
+                        "cmc": cmc,
+                        "mAP": mAP,
+                        "mINP": mINP,
+                        "epoch": epoch,
+                    }
+                    torch.save(state, os.path.join(args.model_path, args.logs_file + "_stage2_regdb.pth"))
+                print("Best Epoch [{}], Rank-1: {:.2%} |  mAP: {:.2%}| mINP: {:.2%}".format(best_epoch, best_acc, best_mAP, best_mINP))
+            else:
+                print('please input correct dataset!!')
 
         torch.cuda.empty_cache()
 

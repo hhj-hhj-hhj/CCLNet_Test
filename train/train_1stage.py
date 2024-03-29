@@ -13,6 +13,7 @@ from util.utils import AverageMeter
 
 from data.data_manager import process_query_sysu, process_gallery_sysu
 from data.dataloader import TestData
+from data.data_manager import process_test_regdb
 from util.eval import tester
 
 
@@ -140,49 +141,84 @@ def do_train_stage1(args,
             #     torch.save(model.state_dict(), os.path.join(args.model_path, args.logs_file + '_stage1_{}.pth'.format(epoch)))
 
         if epoch == args.stage1_maxepochs:
-            print('Test Epoch: {}'.format(epoch))
-            test_mode = [1, 2]
-            query_img, query_label, query_cam = process_query_sysu(args.data_path, mode=args.mode)
-            queryset = TestData(query_img, query_label, transform=transform_test, img_size=(args.img_w, args.img_h))
-            query_loader = data.DataLoader(queryset, batch_size=args.test_batch_size, shuffle=False, num_workers=args.workers)
+            if args.dataset == 'sysu':
+                print('Test Epoch: {}'.format(epoch))
+                test_mode = [1, 2]
+                query_img, query_label, query_cam = process_query_sysu(args.data_path, mode=args.mode)
+                queryset = TestData(query_img, query_label, transform=transform_test, img_size=(args.img_w, args.img_h))
+                query_loader = data.DataLoader(queryset, batch_size=args.test_batch_size, shuffle=False, num_workers=args.workers)
 
-            for trial in range(10):
-                # print('-------test trial {}-------'.format(trial))
-                gall_img, gall_label, gall_cam = process_gallery_sysu(args.data_path, mode=args.mode, trial=trial)
+                for trial in range(10):
+                    # print('-------test trial {}-------'.format(trial))
+                    gall_img, gall_label, gall_cam = process_gallery_sysu(args.data_path, mode=args.mode, trial=trial)
+                    gallset = TestData(gall_img, gall_label, transform=transform_test, img_size=(args.img_w, args.img_h))
+                    gall_loader = data.DataLoader(gallset, batch_size=args.test_batch_size, shuffle=False, num_workers=args.workers)
+
+                    cmc, mAP, mINP = tester(args, epoch, model, test_mode, gall_label, gall_loader, query_label, query_loader,
+                                            feat_dim=2048,
+                                            query_cam=query_cam, gall_cam=gall_cam)
+                    if trial == 0:
+                        all_cmc = cmc
+                        all_mAP = mAP
+                        all_mINP = mINP
+                    else:
+                        all_cmc = all_cmc + cmc
+                        all_mAP = all_mAP + mAP
+                        all_mINP = all_mINP + mINP
+
+                cmc = all_cmc / 10
+                mAP = all_mAP / 10
+                mINP = all_mINP / 10
+
+                print(
+                    "Performance[ALL]: Rank-1: {:.2%} | Rank-5: {:.2%} | Rank-10: {:.2%}| Rank-20: {:.2%}| mAP: {:.2%}| mINP: {:.2%}".format(
+                        cmc[0], cmc[4],
+                        cmc[9], cmc[19],
+                        mAP, mINP))
+
+                state = {
+                    "state_dict": model.state_dict(),
+                    "cmc": cmc,
+                    "mAP": mAP,
+                    "mINP": mINP,
+                    "epoch": epoch,
+                }
+                torch.save(state, os.path.join(args.model_path, args.logs_file + "_stage1.pth"))
+            elif args.dataset == 'regdb':
+                print('Test Epoch: {}'.format(epoch))
+
+                query_img, query_label = process_test_regdb(img_dir=args.data_path, trial=args.trial, modal='visible')
+                gall_img, gall_label = process_test_regdb(img_dir=args.data_path, trial=args.trial, modal='thermal')
+
+                test_mode = [2, 1]
                 gallset = TestData(gall_img, gall_label, transform=transform_test, img_size=(args.img_w, args.img_h))
+                queryset = TestData(query_img, query_label, transform=transform_test, img_size=(args.img_w, args.img_h))
+
+                # testing data loader
                 gall_loader = data.DataLoader(gallset, batch_size=args.test_batch_size, shuffle=False, num_workers=args.workers)
+                query_loader = data.DataLoader(queryset, batch_size=args.test_batch_size, shuffle=False, num_workers=args.workers)
 
                 cmc, mAP, mINP = tester(args, epoch, model, test_mode, gall_label, gall_loader, query_label, query_loader,
-                                        feat_dim=2048,
-                                        query_cam=query_cam, gall_cam=gall_cam)
-                if trial == 0:
-                    all_cmc = cmc
-                    all_mAP = mAP
-                    all_mINP = mINP
-                else:
-                    all_cmc = all_cmc + cmc
-                    all_mAP = all_mAP + mAP
-                    all_mINP = all_mINP + mINP
+                                        feat_dim=2048)
 
-            cmc = all_cmc / 10
-            mAP = all_mAP / 10
-            mINP = all_mINP / 10
+                print(
+                    "Performance[ALL]: Rank-1: {:.2%} | Rank-5: {:.2%} | Rank-10: {:.2%}| Rank-20: {:.2%}| mAP: {:.2%}| mINP: {:.2%}".format(
+                        cmc[0], cmc[4],
+                        cmc[9], cmc[19],
+                        mAP, mINP))
 
-            print(
-                "Performance[ALL]: Rank-1: {:.2%} | Rank-5: {:.2%} | Rank-10: {:.2%}| Rank-20: {:.2%}| mAP: {:.2%}| mINP: {:.2%}".format(
-                    cmc[0], cmc[4],
-                    cmc[9], cmc[19],
-                    mAP, mINP))
+                state = {
+                    "state_dict": model.state_dict(),
+                    "cmc": cmc,
+                    "mAP": mAP,
+                    "mINP": mINP,
+                    "epoch": epoch,
+                }
+                torch.save(state, os.path.join(args.model_path, args.logs_file + "_stage1_regdb.pth"))
 
-            state = {
-                "state_dict": model.state_dict(),
-                "cmc": cmc,
-                "mAP": mAP,
-                "mINP": mINP,
-                "epoch": epoch,
-            }
-            torch.save(state, os.path.join(args.model_path, args.logs_file + "_stage1.pth"))
-
+            else:
+                print('please input correct dataset!!')
+            
     end_time = time.monotonic()
     print('Stage1 running time: ', timedelta(seconds=end_time - start_time))
 
