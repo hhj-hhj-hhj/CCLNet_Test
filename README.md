@@ -56,7 +56,8 @@ Later you have to train again, so you need to ensure that the dataset folder con
 For SYSU-MM01:[pseudo_labels_sysu](https://drive.google.com/drive/folders/1Ysl8tHZ1ZmKlFXnuJHWBZJ9Giel0Q6nZ?usp=drive_link)
 
 For RegDB:[pseudo_labels_regdb](https://drive.google.com/drive/folders/1porzH8N5rVPB-7R2xo3AEdD3whly0w8Z?usp=drive_link)
-You have to run:
+
+Then you have to run:
 ```
 mkdir /dataset/SYSU-MM01/pseudo_labels/
 download '.npy' into /dataset/SYSU-MM01/pseudo_labels/
