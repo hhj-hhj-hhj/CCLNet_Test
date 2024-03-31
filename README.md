@@ -77,7 +77,7 @@ CUDA_VISIBLE_DEVICES=0 python train_clip_regdb.py
 For example, if you want to test CCLNet for SYSU-MM01, you have to run:
 
 ```
-CUDA_VISIBLE_DEVICES=0 python test.py --dataset 'regdb' --resume_path 'checkpoints/model_best.pth'
+CUDA_VISIBLE_DEVICES=0 python test.py --dataset 'sysu' --resume_path 'checkpoints/model_best.pth'
 ```
 
 ### Acknowledgement
@@ -88,7 +88,7 @@ Codebase from [CLIP](https://github.com/openai/CLIP)[1], [CoOp](https://github.c
 | Settings                    | Pretrained | Loss | Rank@1 | mAP | Model(pth)                 |
 |-----------------------------|------------|---|--------|-----|-----------------------|
 | SYSU-MM01(train_prepare.py) | CLIP     | L_qr+L_qt | ~50.02%     | ~45.52%  | [model_perpare_sysu.pth](https://drive.google.com/file/d/1mK41qVbKmWHQLgfSPijk0RYDrWVJdOsG/view?usp=drive_link) |
-| SYSU-MM01(train_clip_sysu.py)    | CLIP     | L_qr+L_qt+L_i2tce  | ~55.31%     | ~50.38%  | [model_best_sysu.pth](https://drive.google.com/file/d/1-qniQHrgmVYxERh62hacV0Kt07y_sZuU/view?usp=drive_link) |
+| SYSU-MM01(train_clip_sysu.py)    | CLIP     | L_qr+L_qt+L_i2tce  | ~55.31%     | ~50.38%  | [model_best_sysu.pth](https://drive.google.com/file/d/1ga6ZCLFDRUbebsisvRXkqR2dc1kV-gH-/view?usp=drive_link) |
 | RegDB-trial1(train_clip_regdb.py) | CLIP     | L_qr+L_qt+L_i2tce  | ~71.94%     | ~67.63%  | [model_best_regdb_trial1.pth](https://drive.google.com/file/d/1F8Hh-6J4Va0YI8uA7HWpi-oLC2CW7-MS/view?usp=drive_link) |
 
 ### 4.Citation
