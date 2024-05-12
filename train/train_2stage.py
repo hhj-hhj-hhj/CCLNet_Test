@@ -141,9 +141,9 @@ def do_train_stage2(args,
     losses = AverageMeter()
     losses_rgb = AverageMeter()
     losses_ir = AverageMeter()
-    losses_i2t = AverageMeter()
-    losses_i2t_rgb = AverageMeter()
-    losses_i2t_ir = AverageMeter()
+    # losses_i2t = AverageMeter()
+    # losses_i2t_rgb = AverageMeter()
+    # losses_i2t_ir = AverageMeter()
 
     # torch.cuda.empty_cache()
 
@@ -169,14 +169,14 @@ def do_train_stage2(args,
             cluster_loader_ir = get_cluster_loader(unlabel_dataset, args.test_batch_size, args.workers)
             features_ir, _ = extract_features_clip(model, cluster_loader_ir, modal=2, get_image=False)
             features_ir = torch.cat([features_ir[path].unsqueeze(0) for path in unlabel_dataset.train_thermal_path], 0).cuda()
-
-            rerank_dist_rgb = compute_jaccard_distance(features_rgb, k1=args.k1, k2=args.k2)
-            pseudo_labels_rgb = cluster.fit_predict(rerank_dist_rgb)
-            num_cluster_rgb = len(set(pseudo_labels_rgb)) - (1 if -1 in pseudo_labels_rgb else 0)
-
-            rerank_dist_ir = compute_jaccard_distance(features_ir, k1=args.k1, k2=args.k2)
-            pseudo_labels_ir = cluster.fit_predict(rerank_dist_ir)
-            num_cluster_ir = len(set(pseudo_labels_ir)) - (1 if -1 in pseudo_labels_ir else 0)
+        #
+        #     rerank_dist_rgb = compute_jaccard_distance(features_rgb, k1=args.k1, k2=args.k2)
+        #     pseudo_labels_rgb = cluster.fit_predict(rerank_dist_rgb)
+        #     num_cluster_rgb = len(set(pseudo_labels_rgb)) - (1 if -1 in pseudo_labels_rgb else 0)
+        #
+        #     rerank_dist_ir = compute_jaccard_distance(features_ir, k1=args.k1, k2=args.k2)
+        #     pseudo_labels_ir = cluster.fit_predict(rerank_dist_ir)
+        #     num_cluster_ir = len(set(pseudo_labels_ir)) - (1 if -1 in pseudo_labels_ir else 0)
 
         # generate new dataset and calculate cluster centers
         @torch.no_grad()
@@ -194,10 +194,10 @@ def do_train_stage2(args,
             centers = torch.stack(centers, dim=0)
             return centers
 
-        cluster_features_rgb = generate_cluster_features(pseudo_labels_rgb, features_rgb)
-        cluster_features_ir = generate_cluster_features(pseudo_labels_ir, features_ir)
-
-        del features_rgb, features_ir, cluster_loader_rgb, cluster_loader_ir, rerank_dist_rgb, rerank_dist_ir
+        # cluster_features_rgb = generate_cluster_features(pseudo_labels_rgb, features_rgb)
+        # cluster_features_ir = generate_cluster_features(pseudo_labels_ir, features_ir)
+        #
+        # del features_rgb, features_ir, cluster_loader_rgb, cluster_loader_ir, rerank_dist_rgb, rerank_dist_ir
 
         if args.dataset == 'regdb' and epoch == args.base_epoch:
             optimizer = make_optimizer_2stage_later(args, model)
@@ -212,10 +212,10 @@ def do_train_stage2(args,
             change_scale = 1.
 
 
-        memory = ClusterMemory(2048, num_cluster_rgb, num_cluster_ir, temp=args.temp,
-                               momentum=args.momentum, use_hard=args.use_hard, change_scale=change_scale).cuda()
-        memory.features_rgb = F.normalize(cluster_features_rgb, dim=1).cuda()
-        memory.features_ir = F.normalize(cluster_features_ir, dim=1).cuda()
+        # memory = ClusterMemory(2048, num_cluster_rgb, num_cluster_ir, temp=args.temp,
+        #                        momentum=args.momentum, use_hard=args.use_hard, change_scale=change_scale).cuda()
+        # memory.features_rgb = F.normalize(cluster_features_rgb, dim=1).cuda()
+        # memory.features_ir = F.normalize(cluster_features_ir, dim=1).cuda()
 
         # generate new dataset
         end = time.time()
@@ -251,9 +251,9 @@ def do_train_stage2(args,
         losses.reset()
         losses_rgb.reset()
         losses_ir.reset()
-        losses_i2t.reset()
-        losses_i2t_rgb.reset()
-        losses_i2t_ir.reset()
+        # losses_i2t.reset()
+        # losses_i2t_rgb.reset()
+        # losses_i2t_ir.reset()
 
         scheduler.step()
         model.train()
@@ -269,19 +269,35 @@ def do_train_stage2(args,
             vid_ir = vid_ir.to(device)
 
             # with amp.autocast(enabled=True):
-            image_features, image_features_proj = model(x1=img_rgb, x2=img_ir, modal=0)
-            logits_rgb = image_features_proj[:img_rgb.size(0)] @ text_features_rgb.t()
-            logits_ir = image_features_proj[img_rgb.size(0):] @ text_features_ir.t()
-            loss_i2t_rgb = loss_fn_rgb(logits_rgb, vid_rgb)
-            loss_i2t_ir = loss_fn_ir(logits_ir, vid_ir)
-            loss_i2t = loss_i2t_rgb + loss_i2t_ir
+            # 原来的计算损失
+            # image_features, image_features_proj = model(x1=img_rgb, x2=img_ir, modal=0)
+            # logits_rgb = image_features_proj[:img_rgb.size(0)] @ text_features_rgb.t()
+            # logits_ir = image_features_proj[img_rgb.size(0):] @ text_features_ir.t()
+            # loss_i2t_rgb = loss_fn_rgb(logits_rgb, vid_rgb)
+            # loss_i2t_ir = loss_fn_ir(logits_ir, vid_ir)
+            # loss_i2t = loss_i2t_rgb + loss_i2t_ir
 
+            # 开始提取特征计算损失
+            with amp.autocast(enabled=True):
+                res_rgb, res_ir = model(x1=img_rgb, x2=img_ir, modal=0)
+                score_rgb, feat_rgb, image_features_rgb = res_rgb
+                score_ir, feat_ir, image_features_ir = res_ir
+
+                logits_rgb = image_features_rgb @ text_feature_rgb.t()
+                logits_ir = image_features_ir @ text_feature_ir.t()
+
+                loss_rgb = loss_fn_rgb(score_rgb, feat_rgb, label_rgb, logits_rgb)
+                loss_ir = loss_fn_ir(score_ir, feat_ir, label_ir, logits_ir)
+
+                loss = loss_rgb + loss_ir
+            #
+            #
+            # # out_rgb = image_features[:img_rgb.size(0)]
             # out_rgb = image_features[:img_rgb.size(0)]
-            out_rgb = image_features[:img_rgb.size(0)]
-            out_ir = image_features[img_rgb.size(0):]
-            loss_rgb, loss_ir = memory(out_rgb, out_ir, label_rgb, label_ir)
-
-            loss = loss_rgb + loss_ir + loss_i2t
+            # out_ir = image_features[img_rgb.size(0):]
+            # loss_rgb, loss_ir = memory(out_rgb, out_ir, label_rgb, label_ir)
+            #
+            # loss = loss_rgb + loss_ir + loss_i2t
 
             scaler.scale(loss).backward()
             scaler.step(optimizer)
@@ -289,15 +305,15 @@ def do_train_stage2(args,
 
             losses_rgb.update(loss_rgb.item())
             losses_ir.update(loss_ir.item())
-            losses_i2t.update(loss_i2t.item())
-            losses_i2t_rgb.update(loss_i2t_rgb.item())
-            losses_i2t_ir.update(loss_i2t_ir.item())
+            # losses_i2t.update(loss_i2t.item())
+            # losses_i2t_rgb.update(loss_i2t_rgb.item())
+            # losses_i2t_ir.update(loss_i2t_ir.item())
             losses.update(loss.item())
             torch.cuda.synchronize()
             if n_iter % args.print_freq == 0:
-                print("Epoch[{}] Iteration[{}/{}], Loss_rgb_ir_i2t: ({:.3f})({:.3f})({:.3f})({:.3f}) ({:.3f}), Base Lr: {:.2e}"
+                print("Epoch[{}] Iteration[{}/{}], Loss_rgb_ir_i2t: ({:.3f})({:.3f})({:.3f}), Base Lr: {:.2e}"
                  .format(epoch, (n_iter + 1), len(trainloader), losses_rgb.avg, losses_ir.avg,
-                         losses_i2t_rgb.avg, losses_i2t_ir.avg, losses.avg,scheduler.get_lr()[0]))
+                        losses.avg,scheduler.get_lr()[0]))
 
         if epoch % args.eval_step == 0 or (epoch == args.stage2_maxepochs):
             if args.dataset == 'sysu':

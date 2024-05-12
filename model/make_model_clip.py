@@ -132,10 +132,12 @@ class base_resnet(nn.Module):
     def forward(self, x):
         x = self.base.layer1(x)
         x = self.base.layer2(x)
-        x = self.base.layer3(x)
-        x = self.base.layer4(x)
+        x3 = self.base.layer3(x)
+        x4 = self.base.layer4(x3)
         # x_pool_att = self.base.attnpool(x)
-        return x
+        return x3, x4
+
+
 
 class build_model(nn.Module):
     def __init__(self, args, num_classes_rgb, num_classes_ir):
@@ -165,7 +167,42 @@ class build_model(nn.Module):
         self.bottleneck.bias.requires_grad_(False)
         self.bottleneck.apply(weights_init_kaiming)
 
+        self.bottleneck_proj = nn.BatchNorm1d(self.num_features_proj)
+        self.bottleneck_proj.bias.requires_grad_(False)
+        self.bottleneck_proj.apply(weights_init_kaiming)
+
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
+
+    #     分类层
+        self.classifier_rgb = nn.Linear(self.num_features, self.num_classes_rgb, bias=False)
+        self.classifier_rgb.apply(weights_init_classifier)
+        self.classifier_rgb_proj = nn.Linear(self.num_features_proj, self.num_classes_rgb, bias=False)
+        self.classifier_rgb_proj.apply(weights_init_classifier)
+
+        self.classifier_ir = nn.Linear(self.num_features, self.num_classes_ir, bias=False)
+        self.classifier_ir.apply(weights_init_classifier)
+        self.classifier_ir_proj = nn.Linear(self.num_features_proj, self.num_classes_ir, bias=False)
+        self.classifier_ir_proj.apply(weights_init_classifier)
+
+    def get_res(self, x, modal):
+        image_features_last, image_features = self.base_resnet(x)
+        image_features_proj = self.base_resnet.base.attnpool(image_features)
+        img_feature_last = nn.functional.avg_pool2d(image_features_last, image_features_last.shape[2:4]).view(
+            x.shape[0], -1)
+        img_feature = nn.functional.avg_pool2d(image_features, image_features.shape[2:4]).view(x.shape[0], -1)
+        img_feature_proj = image_features_proj[0]
+
+        feat = self.bottleneck(img_feature)
+        feat_proj = self.bottleneck(image_features_proj[0])
+        if modal == 1:
+            cls_score = self.classifier_rgb(feat)
+            cls_score_proj = self.classifier_rgb_proj(feat_proj)
+        elif modal == 2:
+            cls_score = self.classifier_ir(feat)
+            cls_score_proj = self.classifier_ir_proj(feat_proj)
+        return [cls_score, cls_score_proj], [img_feature_last, img_feature, img_feature_proj], img_feature_proj
+
+
 
     def forward(self, x1=None, x2=None, modal=0, get_image=False, get_text=False, label=None):
         if get_text:
@@ -185,21 +222,25 @@ class build_model(nn.Module):
                 x = self.thermal_module(x2)
             else:
                 return 0
-            x = self.base_resnet(x)
-            image_features_proj = self.base_resnet.base.attnpool(x)
+            image_features_last, image_features = self.base_resnet(x)
+            image_features_proj = self.base_resnet.base.attnpool(image_features)
             return image_features_proj[0]
 
         if modal == 0:
             x1 = self.visible_module(x1)
             x2 = self.thermal_module(x2)
             x = torch.cat((x1, x2), 0)
+            res_rgb = self.get_res(x1, 1)
+            res_ir = self.get_res(x2, 2)
+            res = (res_rgb, res_ir)
         elif modal == 1:
             x = self.visible_module(x1)
+            res = self.get_res(x, 1)
         elif modal == 2:
             x = self.thermal_module(x2)
+            res = self.get_res(x, 2)
 
         x = self.base_resnet(x)
-        image_features_proj = self.base_resnet.base.attnpool(x)
         # image_features, _ = self.image_encoder(x)
         # x_pool = image_features_pool[0]
 
@@ -216,7 +257,7 @@ class build_model(nn.Module):
         feat = self.bottleneck(x_pool)
 
         if self.training:
-            return feat, image_features_proj[0]
+            return res
         else:
             return self.l2norm(feat)
             # return feat

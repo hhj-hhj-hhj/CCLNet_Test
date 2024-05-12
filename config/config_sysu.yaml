@@ -73,7 +73,7 @@ stage2_ims_per_batch: 128
 
 #log path
 logs_dir: save/logs/sysu/
-logs_time: 23-11-19
+logs_time: 24-5-12
 logs_file: uploadgithub_test_sysu
 vis_log_dir: save/logs/vis_log/
 model_path: save/checkpoints/
