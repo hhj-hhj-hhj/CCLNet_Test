@@ -25,7 +25,7 @@ def get_cluster_loader(dataset, batch_size, workers):
     return cluster_loader
 
 def do_train_stage1(args,
-                    unlabel_dataset,
+                    dataset,
                     model,
                     optimizer,
                     scheduler
@@ -45,20 +45,20 @@ def do_train_stage1(args,
     with torch.no_grad():
 
         print("==> Extract RGB features")
-        unlabel_dataset.rgb_cluster = True
-        unlabel_dataset.ir_cluster = False
-        cluster_loader_rgb = get_cluster_loader(unlabel_dataset, args.test_batch_size, args.workers)
+        dataset.rgb_cluster = True
+        dataset.ir_cluster = False
+        cluster_loader_rgb = get_cluster_loader(dataset, args.test_batch_size, args.workers)
         features_rgb, pseudo_labels_rgb = extract_features_clip(model, cluster_loader_rgb, modal=1, get_image=True)
-        features_rgb = torch.cat([features_rgb[path].unsqueeze(0) for path in unlabel_dataset.train_color_path], 0).cuda()
-        pseudo_labels_rgb = torch.cat([pseudo_labels_rgb[path].unsqueeze(0) for path in unlabel_dataset.train_color_path], 0)
+        features_rgb = torch.cat([features_rgb[path].unsqueeze(0) for path in dataset.train_color_path], 0).cuda()
+        pseudo_labels_rgb = torch.cat([pseudo_labels_rgb[path].unsqueeze(0) for path in dataset.train_color_path], 0)
 
         print("==> Extract IR features")
-        unlabel_dataset.ir_cluster = True
-        unlabel_dataset.rgb_cluster = False
-        cluster_loader_ir = get_cluster_loader(unlabel_dataset, args.test_batch_size, args.workers)
+        dataset.ir_cluster = True
+        dataset.rgb_cluster = False
+        cluster_loader_ir = get_cluster_loader(dataset, args.test_batch_size, args.workers)
         features_ir, pseudo_labels_ir = extract_features_clip(model, cluster_loader_ir, modal=2, get_image=True)
-        features_ir = torch.cat([features_ir[path].unsqueeze(0) for path in unlabel_dataset.train_thermal_path], 0).cuda()
-        pseudo_labels_ir = torch.cat([pseudo_labels_ir[path].unsqueeze(0) for path in unlabel_dataset.train_thermal_path], 0)
+        features_ir = torch.cat([features_ir[path].unsqueeze(0) for path in dataset.train_thermal_path], 0).cuda()
+        pseudo_labels_ir = torch.cat([pseudo_labels_ir[path].unsqueeze(0) for path in dataset.train_thermal_path], 0)
 
     del cluster_loader_rgb, cluster_loader_ir
 

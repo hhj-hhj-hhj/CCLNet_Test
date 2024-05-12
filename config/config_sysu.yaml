@@ -2,7 +2,7 @@
 
 #dataset configs
 dataset: sysu
-data_path: /home/cz/dataset/SYSU-MM01/
+data_path: "E:\\hhj\\SYSU-MM01\\"
 pseudo_labels_path: /home/cz/dataset/SYSU-MM01/pseudo_labels/  # Do not modify the file name 'pseudo_labels' in your dataset!!
 batch_size: 4
 test_batch_size: 64

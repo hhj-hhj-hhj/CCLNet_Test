@@ -21,7 +21,7 @@ from train.train_1stage import do_train_stage1
 from util.make_optimizer import make_optimizer_1stage, make_optimizer_2stage
 from util.optim.lr_scheduler import WarmupMultiStepLR
 from util.optim.scheduler_factory import create_scheduler
-from data.dataloader import Unlabeld_SYSUData_Pseudo
+from data.dataloader import Unlabeld_SYSUData_Pseudo, SYSUData_Stage1
 from model.make_model_clip import build_model
 from util.utils import Logger
 
@@ -72,24 +72,24 @@ def main_worker(args):
     print("==> Load unlabeled dataset")
     # data_path = '/home/cz/dataset/SYSU-MM01/'
     data_path = args.data_path
-    unlabel_dataset = Unlabeld_SYSUData_Pseudo(data_dir=data_path, transform=transform_test, rgb_cluster=False,
+    dataset = SYSUData_Stage1(data_dir=data_path, transform=transform_test, rgb_cluster=False,
                                         ir_cluster=False)
-    if -1 in unlabel_dataset.train_color_label:
-        n_color_class = len(np.unique(unlabel_dataset.train_color_label)) - 1
+    if -1 in dataset.train_color_label:
+        n_color_class = len(np.unique(dataset.train_color_label)) - 1
     else:
-        n_color_class = len(np.unique(unlabel_dataset.train_color_label)) 
-    if -1 in unlabel_dataset.train_thermal_label:
-        n_thermal_class = len(np.unique(unlabel_dataset.train_thermal_label)) - 1
+        n_color_class = len(np.unique(dataset.train_color_label)) 
+    if -1 in dataset.train_thermal_label:
+        n_thermal_class = len(np.unique(dataset.train_thermal_label)) - 1
     else:
-        n_thermal_class = len(np.unique(unlabel_dataset.train_thermal_label))
+        n_thermal_class = len(np.unique(dataset.train_thermal_label))
     # num_classes = n_color_class + n_thermal_class
 
     print("Dataset {} Statistics:".format(args.dataset))
     print("  ----------------------------")
     print("  subset   | # ids | # images")
     print("  ----------------------------")
-    print("  visible  | {:5d} | {:8d}".format(n_color_class, len(unlabel_dataset.train_color_image)))
-    print("  thermal  | {:5d} | {:8d}".format(n_thermal_class, len(unlabel_dataset.train_thermal_image)))
+    print("  visible  | {:5d} | {:8d}".format(n_color_class, len(dataset.train_color_image)))
+    print("  thermal  | {:5d} | {:8d}".format(n_thermal_class, len(dataset.train_thermal_image)))
     print("  ----------------------------")
     # print("  query    | {:5d} | {:8d}".format(len(np.unique(query_label)), len(query_label)))
     # print("  gallery  | {:5d} | {:8d}".format(len(np.unique(gall_label)), len(gall_label)))
@@ -105,7 +105,7 @@ def main_worker(args):
     scheduler_1stage = create_scheduler(optimizer_1stage, num_epochs=args.stage1_maxepochs, lr_min=args.stage1_lrmin,
                                            warmup_lr_init=args.stage1_warmup_lrinit, warmup_t=args.stage1_warmup_epoch, noise_range=None)
 
-    do_train_stage1(args, unlabel_dataset, model, optimizer_1stage, scheduler_1stage)
+    do_train_stage1(args, dataset, model, optimizer_1stage, scheduler_1stage)
 
     optimizer_2stage = make_optimizer_2stage(args, model)
     scheduler_2stage = WarmupMultiStepLR(optimizer_2stage, args.stage2_steps, args.stage2_gamma, args.stage2_warmup_factor,
@@ -114,7 +114,7 @@ def main_worker(args):
     loss_func_rgb = make_loss(num_classes=n_color_class)
     loss_func_ir = make_loss(num_classes=n_thermal_class)
 
-    do_train_stage2(args, unlabel_dataset, model, optimizer_2stage, scheduler_2stage, loss_func_rgb, loss_func_ir)
+    do_train_stage2(args, dataset, model, optimizer_2stage, scheduler_2stage, loss_func_rgb, loss_func_ir)
 
     end_time = time.monotonic()
     print('Total running time: ', timedelta(seconds=end_time - start_time))
