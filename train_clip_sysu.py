@@ -111,8 +111,8 @@ def main_worker(args):
     scheduler_2stage = WarmupMultiStepLR(optimizer_2stage, args.stage2_steps, args.stage2_gamma, args.stage2_warmup_factor,
                                          args.stage2_warmup_iters, args.stage2_warmup_method)
 
-    loss_func_rgb = make_loss(num_classes=n_color_class)
-    loss_func_ir = make_loss(num_classes=n_thermal_class)
+    loss_func_rgb = make_loss(args, num_classes=n_color_class)
+    loss_func_ir = make_loss(args, num_classes=n_thermal_class)
 
     do_train_stage2(args, dataset, model, optimizer_2stage, scheduler_2stage, loss_func_rgb, loss_func_ir)
 

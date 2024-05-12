@@ -36,6 +36,11 @@ warmup_factor: 0.01
 warmup_iters: 10
 warmup_method: 'linear'
 
+id_loss_weight: 0.25
+triplet_loss_weight: 1.0
+i2t_loss_weight: 1.0
+margin: 0.3
+
 #training configs
 gpu: 0   #for which gpu to run!!!
 seed: 1
