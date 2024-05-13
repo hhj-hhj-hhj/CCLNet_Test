@@ -148,27 +148,27 @@ def do_train_stage2(args,
     # torch.cuda.empty_cache()
 
     for epoch in range(1, epochs+1):
-        with torch.no_grad():
-            if epoch == 1:
+        # with torch.no_grad():
+            # if epoch == 1:
                 # DBSCAN cluster
-                eps = args.eps
-                print('Clustering criterion: eps: {:.3f}'.format(eps))
-                cluster = DBSCAN(eps=eps, min_samples=4, metric='precomputed', n_jobs=-1)
-
-            print('==> Create pseudo labels for unlabeled data')
-            print("==> Extract RGB features")
-            unlabel_dataset.rgb_cluster = True
-            unlabel_dataset.ir_cluster = False
-            cluster_loader_rgb = get_cluster_loader(unlabel_dataset, args.test_batch_size, args.workers)
-            features_rgb, _ = extract_features_clip(model, cluster_loader_rgb, modal=1, get_image=False)
-            features_rgb = torch.cat([features_rgb[path].unsqueeze(0) for path in unlabel_dataset.train_color_path], 0).cuda()
-
-            print("==> Extract IR features")
-            unlabel_dataset.ir_cluster = True
-            unlabel_dataset.rgb_cluster = False
-            cluster_loader_ir = get_cluster_loader(unlabel_dataset, args.test_batch_size, args.workers)
-            features_ir, _ = extract_features_clip(model, cluster_loader_ir, modal=2, get_image=False)
-            features_ir = torch.cat([features_ir[path].unsqueeze(0) for path in unlabel_dataset.train_thermal_path], 0).cuda()
+                # eps = args.eps
+            #     print('Clustering criterion: eps: {:.3f}'.format(eps))
+            #     cluster = DBSCAN(eps=eps, min_samples=4, metric='precomputed', n_jobs=-1)
+            #
+            # print('==> Create pseudo labels for unlabeled data')
+            # print("==> Extract RGB features")
+            # unlabel_dataset.rgb_cluster = True
+            # unlabel_dataset.ir_cluster = False
+            # cluster_loader_rgb = get_cluster_loader(unlabel_dataset, args.test_batch_size, args.workers)
+            # features_rgb, _ = extract_features_clip(model, cluster_loader_rgb, modal=1, get_image=False)
+            # features_rgb = torch.cat([features_rgb[path].unsqueeze(0) for path in unlabel_dataset.train_color_path], 0).cuda()
+            #
+            # print("==> Extract IR features")
+            # unlabel_dataset.ir_cluster = True
+            # unlabel_dataset.rgb_cluster = False
+            # cluster_loader_ir = get_cluster_loader(unlabel_dataset, args.test_batch_size, args.workers)
+            # features_ir, _ = extract_features_clip(model, cluster_loader_ir, modal=2, get_image=False)
+            # features_ir = torch.cat([features_ir[path].unsqueeze(0) for path in unlabel_dataset.train_thermal_path], 0).cuda()
         #
         #     rerank_dist_rgb = compute_jaccard_distance(features_rgb, k1=args.k1, k2=args.k2)
         #     pseudo_labels_rgb = cluster.fit_predict(rerank_dist_rgb)
@@ -179,20 +179,20 @@ def do_train_stage2(args,
         #     num_cluster_ir = len(set(pseudo_labels_ir)) - (1 if -1 in pseudo_labels_ir else 0)
 
         # generate new dataset and calculate cluster centers
-        @torch.no_grad()
-        def generate_cluster_features(labels, features):
-            centers = collections.defaultdict(list)
-            for i, label in enumerate(labels):
-                if label == -1:
-                    continue
-                centers[labels[i]].append(features[i])
-
-            centers = [
-                torch.stack(centers[idx], dim=0).mean(0) for idx in sorted(centers.keys())
-            ]
-
-            centers = torch.stack(centers, dim=0)
-            return centers
+        # @torch.no_grad()
+        # def generate_cluster_features(labels, features):
+        #     centers = collections.defaultdict(list)
+        #     for i, label in enumerate(labels):
+        #         if label == -1:
+        #             continue
+        #         centers[labels[i]].append(features[i])
+        #
+        #     centers = [
+        #         torch.stack(centers[idx], dim=0).mean(0) for idx in sorted(centers.keys())
+        #     ]
+        #
+        #     centers = torch.stack(centers, dim=0)
+        #     return centers
 
         # cluster_features_rgb = generate_cluster_features(pseudo_labels_rgb, features_rgb)
         # cluster_features_ir = generate_cluster_features(pseudo_labels_ir, features_ir)
@@ -204,12 +204,12 @@ def do_train_stage2(args,
             scheduler = WarmupMultiStepLR(optimizer, args.stage2_steps, args.stage2_gamma, args.stage2_warmup_factor,
                                                 args.stage2_warmup_iters, args.stage2_warmup_method)
 
-        if epoch >= args.base_epoch:
-            change_scale = args.change_scale
-            print('----------Start Memory(rgb and ir) Change!----------')
-            
-        else:
-            change_scale = 1.
+        # if epoch >= args.base_epoch:
+        #     change_scale = args.change_scale
+        #     print('----------Start Memory(rgb and ir) Change!----------')
+        #
+        # else:
+        #     change_scale = 1.
 
 
         # memory = ClusterMemory(2048, num_cluster_rgb, num_cluster_ir, temp=args.temp,
@@ -220,11 +220,9 @@ def do_train_stage2(args,
         # generate new dataset
         end = time.time()
         if args.dataset == 'sysu':
-            trainset = SYSUData_Stage2(args.data_path, pseudo_labels_rgb, pseudo_labels_ir, transform_train_rgb,
-                                 transform_train_ir)
+            trainset = SYSUData_Stage2(args.data_path, transform_train_rgb, transform_train_ir)
         else:
-            trainset = RegDBData_Stage2(args.data_path, args.trial, pseudo_labels_rgb, pseudo_labels_ir, transform_train_rgb,
-                                 transform_train_ir)
+            trainset = RegDBData_Stage2(args.data_path, args.trial, transform_train_rgb, transform_train_ir)
         print("New Dataset Information---- ")
         print("  ----------------------------")
         print("  subset   | # ids | # images")
