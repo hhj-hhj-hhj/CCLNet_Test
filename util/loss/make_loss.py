@@ -39,8 +39,7 @@ def make_loss(args, num_classes):
 
         I2TLOSS = xent(i2tscore, target)
 
-        loss = args.i2t_loss_weight * I2TLOSS + args.id_loss_weight * ID_LOSS + args.triplet_loss_weight * TRI_LOSS
-        return loss
+        return ID_LOSS, TRI_LOSS, I2TLOSS
 
     return loss_func
 

@@ -141,7 +141,9 @@ def do_train_stage2(args,
     losses = AverageMeter()
     losses_rgb = AverageMeter()
     losses_ir = AverageMeter()
-    # losses_i2t = AverageMeter()
+    losses_i2t = AverageMeter()
+    losses_id = AverageMeter()
+    losses_tri = AverageMeter()
     # losses_i2t_rgb = AverageMeter()
     # losses_i2t_ir = AverageMeter()
 
@@ -249,7 +251,9 @@ def do_train_stage2(args,
         losses.reset()
         losses_rgb.reset()
         losses_ir.reset()
-        # losses_i2t.reset()
+        losses_i2t.reset()
+        losses_id.reset()
+        losses_tri.reset()
         # losses_i2t_rgb.reset()
         # losses_i2t_ir.reset()
 
@@ -287,6 +291,24 @@ def do_train_stage2(args,
                 loss_rgb = loss_fn_rgb(score_rgb, feat_rgb, label_rgb, logits_rgb)
                 loss_ir = loss_fn_ir(score_ir, feat_ir, label_ir, logits_ir)
 
+                ID_LOSS_RGB, TRI_LOSS_RGB, I2TLOSS_RGB = loss_rgb
+                ID_LOSS_IR, TRI_LOSS_IR, I2TLOSS_IR = loss_ir
+
+                loss_rgb = args.id_loss_weight * ID_LOSS_RGB + args.triplet_loss_weight * TRI_LOSS_RGB + args.i2t_loss_weight * I2TLOSS_RGB
+                loss_ir = args.id_loss_weight * ID_LOSS_IR + args.triplet_loss_weight * TRI_LOSS_IR + args.i2t_loss_weight * I2TLOSS_IR
+
+                loss_i2t_rgb = args.i2t_loss_weight * I2TLOSS_RGB
+                loss_i2t_ir = args.i2t_loss_weight * I2TLOSS_IR
+                loss_i2t = loss_i2t_rgb + loss_i2t_ir
+
+                loss_id_rgb = args.id_loss_weight * ID_LOSS_RGB
+                loss_id_ir = args.id_loss_weight * ID_LOSS_IR
+                loss_id = loss_id_rgb + loss_id_ir
+
+                loss_tri_rgb = args.triplet_loss_weight * TRI_LOSS_RGB
+                loss_tri_ir = args.triplet_loss_weight * TRI_LOSS_IR
+                loss_tri = loss_tri_rgb + loss_tri_ir
+
                 loss = loss_rgb + loss_ir
             #
             #
@@ -303,15 +325,17 @@ def do_train_stage2(args,
 
             losses_rgb.update(loss_rgb.item())
             losses_ir.update(loss_ir.item())
-            # losses_i2t.update(loss_i2t.item())
+            losses_i2t.update(loss_i2t.item())
+            losses_id.update(loss_id.item())
+            losses_tri.update(loss_tri.item())
             # losses_i2t_rgb.update(loss_i2t_rgb.item())
             # losses_i2t_ir.update(loss_i2t_ir.item())
             losses.update(loss.item())
             torch.cuda.synchronize()
             if n_iter % args.print_freq == 0:
-                print("Epoch[{}] Iteration[{}/{}], Loss_rgb_ir_i2t: ({:.3f})({:.3f})({:.3f}), Base Lr: {:.2e}"
+                print("Epoch[{}] Iteration[{}/{}], Loss_rgb_ir_i2t_id_tri: ({:.3f})({:.3f})({:.3f})({:.3f}) ({:.3f}), Base Lr: {:.2e}"
                  .format(epoch, (n_iter + 1), len(trainloader), losses_rgb.avg, losses_ir.avg,
-                        losses.avg,scheduler.get_lr()[0]))
+                         losses_i2t.avg, losses_id.avg, losses_tri.avg, losses.avg,scheduler.get_lr()[0]))
 
         if epoch % args.eval_step == 0 or (epoch == args.stage2_maxepochs):
             if args.dataset == 'sysu':
