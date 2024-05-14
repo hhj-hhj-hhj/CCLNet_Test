@@ -37,7 +37,7 @@ def main_worker(args):
     ## load data
     print("==========\nargs:{}\n==========".format(args))
     data_set = args.dataset
-    feat_dim=2048
+    feat_dim=3072
     if data_set == 'sysu':
         data_path = '/home/cz/dataset/SYSU-MM01/'
         test_mode = [1, 2]

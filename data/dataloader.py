@@ -244,12 +244,12 @@ class SYSUData_Stage2(data.Dataset):
     def __init__(self, data_dir, transform_train_rgb=None, transform_train_ir=None, colorIndex=None, thermalIndex=None):
         # Load training images (path) and labels
 
-        self.train_color_label = np.load('E:\\hhj\\SYSU-MM01\\' + 'train_rgb_resized_label.npy')
-        self.train_thermal_label = np.load('E:\\hhj\\SYSU-MM01\\' + 'train_ir_resized_label.npy')
+        self.train_color_label = np.load('D:\\dataset\\SYSU-MM01\\' + 'train_rgb_resized_label.npy')
+        self.train_thermal_label = np.load('D:\\dataset\\SYSU-MM01\\' + 'train_ir_resized_label.npy')
 
-        self.train_color_image = np.load('E:\\hhj\\SYSU-MM01\\' + 'train_rgb_resized_img.npy')
+        self.train_color_image = np.load('D:\\dataset\\SYSU-MM01\\' + 'train_rgb_resized_img.npy')
 
-        self.train_thermal_image = np.load('E:\\hhj\\SYSU-MM01\\' + 'train_ir_resized_img.npy')
+        self.train_thermal_image = np.load('D:\\dataset\\SYSU-MM01\\' + 'train_ir_resized_img.npy')
 
         # print(f'可见光id数量：{len(np.unique(self.train_color_label))}')
         # print(f'红外id数量：{len(np.unique(self.train_thermal_label))}')

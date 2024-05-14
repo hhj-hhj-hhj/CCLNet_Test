@@ -21,7 +21,9 @@ def get_cluster_loader(dataset, batch_size, workers):
     cluster_loader = data.DataLoader(
         dataset,
         batch_size=batch_size, num_workers=workers,
-        shuffle=False, pin_memory=True)
+        shuffle=False
+        # , pin_memory=True
+    )
     return cluster_loader
 
 def do_train_stage1(args,
@@ -141,7 +143,16 @@ def do_train_stage1(args,
             #     torch.save(model.state_dict(), os.path.join(args.model_path, args.logs_file + '_stage1_{}.pth'.format(epoch)))
 
         if epoch == args.stage1_maxepochs:
+        # if True:
             if args.dataset == 'sysu':
+                # state = {
+                #     "state_dict": model.state_dict(),
+                #     "cmc": cmc,
+                #     "mAP": mAP,
+                #     "mINP": mINP,
+                #     "epoch": epoch,
+                # }
+                # torch.save(model.state_dict(), os.path.join(args.model_path, args.logs_file + "_stage1.pth"))
                 print('Test Epoch: {}'.format(epoch))
                 test_mode = [1, 2]
                 query_img, query_label, query_cam = process_query_sysu(args.data_path, mode=args.mode)
@@ -155,7 +166,7 @@ def do_train_stage1(args,
                     gall_loader = data.DataLoader(gallset, batch_size=args.test_batch_size, shuffle=False, num_workers=args.workers)
 
                     cmc, mAP, mINP = tester(args, epoch, model, test_mode, gall_label, gall_loader, query_label, query_loader,
-                                            feat_dim=2048,
+                                            feat_dim=3072,
                                             query_cam=query_cam, gall_cam=gall_cam)
                     if trial == 0:
                         all_cmc = cmc
@@ -183,8 +194,16 @@ def do_train_stage1(args,
                     "mINP": mINP,
                     "epoch": epoch,
                 }
-                torch.save(state, os.path.join(args.model_path, args.logs_file + "_stage1.pth"))
+                torch.save(state, os.path.join(args.model_path, args.logs_file + "_stage1_add.pth"))
             elif args.dataset == 'regdb':
+                state = {
+                    "state_dict": model.state_dict(),
+                    "cmc": cmc,
+                    "mAP": mAP,
+                    "mINP": mINP,
+                    "epoch": epoch,
+                }
+                torch.save(state, os.path.join(args.model_path, args.logs_file + "_stage1_regdb.pth"))
                 print('Test Epoch: {}'.format(epoch))
 
                 query_img, query_label = process_test_regdb(img_dir=args.data_path, trial=args.trial, modal='visible')
@@ -199,7 +218,7 @@ def do_train_stage1(args,
                 query_loader = data.DataLoader(queryset, batch_size=args.test_batch_size, shuffle=False, num_workers=args.workers)
 
                 cmc, mAP, mINP = tester(args, epoch, model, test_mode, gall_label, gall_loader, query_label, query_loader,
-                                        feat_dim=2048)
+                                        feat_dim=3072)
 
                 print(
                     "Performance[ALL]: Rank-1: {:.2%} | Rank-5: {:.2%} | Rank-10: {:.2%}| Rank-20: {:.2%}| mAP: {:.2%}| mINP: {:.2%}".format(
@@ -207,14 +226,14 @@ def do_train_stage1(args,
                         cmc[9], cmc[19],
                         mAP, mINP))
 
-                state = {
-                    "state_dict": model.state_dict(),
-                    "cmc": cmc,
-                    "mAP": mAP,
-                    "mINP": mINP,
-                    "epoch": epoch,
-                }
-                torch.save(state, os.path.join(args.model_path, args.logs_file + "_stage1_regdb.pth"))
+                # state = {
+                #     "state_dict": model.state_dict(),
+                #     "cmc": cmc,
+                #     "mAP": mAP,
+                #     "mINP": mINP,
+                #     "epoch": epoch,
+                # }
+                # torch.save(state, os.path.join(args.model_path, args.logs_file + "_stage1_regdb.pth"))
 
             else:
                 print('please input correct dataset!!')

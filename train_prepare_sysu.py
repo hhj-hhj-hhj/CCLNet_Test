@@ -30,7 +30,9 @@ def get_cluster_loader(dataset, batch_size, workers):
     cluster_loader = data.DataLoader(
         dataset,
         batch_size=batch_size, num_workers=workers,
-        shuffle=False, pin_memory=True)
+        shuffle=False
+        # , pin_memory=True
+    )
     return cluster_loader
 
 

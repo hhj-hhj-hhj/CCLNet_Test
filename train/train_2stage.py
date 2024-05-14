@@ -41,7 +41,9 @@ def get_cluster_loader(dataset, batch_size, workers):
     cluster_loader = data.DataLoader(
         dataset,
         batch_size=batch_size, num_workers=workers,
-        shuffle=False, pin_memory=True)
+        shuffle=False
+        # , pin_memory=True
+    )
     return cluster_loader
 
 
@@ -137,6 +139,8 @@ def do_train_stage2(args,
             text_features_ir.append(text_feature_ir.cpu())
         text_features_ir = torch.cat(text_features_ir, 0).cuda()
 
+    del text_feature_rgb,text_feature_ir
+
     scaler = amp.GradScaler()
     losses = AverageMeter()
     losses_rgb = AverageMeter()
@@ -229,16 +233,16 @@ def do_train_stage2(args,
         print("  ----------------------------")
         print("  subset   | # ids | # images")
         print("  ----------------------------")
-        print("  visible  | {:5d} | {:8d}".format(len(np.unique(trainset.train_color_pseudo_label)),
+        print("  visible  | {:5d} | {:8d}".format(len(np.unique(trainset.train_color_label)),
                                                   len(trainset.train_color_image)))
-        print("  thermal  | {:5d} | {:8d}".format(len(np.unique(trainset.train_thermal_pseudo_label)),
+        print("  thermal  | {:5d} | {:8d}".format(len(np.unique(trainset.train_thermal_label)),
                                                   len(trainset.train_thermal_image)))
         print("  ----------------------------")
         print("Data loading time:\t {:.3f}".format(time.time() - end))
 
-        color_pos, thermal_pos = GenIdx(trainset.train_color_pseudo_label, trainset.train_thermal_pseudo_label)
+        color_pos, thermal_pos = GenIdx(trainset.train_color_label, trainset.train_thermal_label)
 
-        sampler = IdentitySampler_nosk(trainset.train_color_pseudo_label, trainset.train_thermal_pseudo_label, color_pos, thermal_pos,
+        sampler = IdentitySampler_nosk(trainset.train_color_label, trainset.train_thermal_label, color_pos, thermal_pos,
                                        args.num_instances, args.batch_size)
 
         trainset.cIndex = sampler.index1
@@ -259,16 +263,14 @@ def do_train_stage2(args,
 
         scheduler.step()
         model.train()
-        for n_iter, (img_rgb, img_ir, label_rgb, label_ir, vid_rgb, vid_ir) in enumerate(trainloader):
+        for n_iter, (img_rgb, img_ir, label_rgb, label_ir) in enumerate(trainloader):
 
             optimizer.zero_grad()
             img_rgb = img_rgb.to(device)
-            label_rgb = label_rgb.to(device)
-            vid_rgb = vid_rgb.to(device)
+            label_rgb = label_rgb.to(device, dtype=torch.int64)
 
             img_ir = img_ir.to(device)
-            label_ir = label_ir.to(device)
-            vid_ir = vid_ir.to(device)
+            label_ir = label_ir.to(device, dtype=torch.int64)
 
             # with amp.autocast(enabled=True):
             # 原来的计算损失
@@ -281,15 +283,17 @@ def do_train_stage2(args,
 
             # 开始提取特征计算损失
             with amp.autocast(enabled=True):
-                res_rgb, res_ir = model(x1=img_rgb, x2=img_ir, modal=0)
-                score_rgb, feat_rgb, image_features_rgb = res_rgb
-                score_ir, feat_ir, image_features_ir = res_ir
+                # res_rgb, res_ir = model(x1=img_rgb, x2=img_ir, modal=0)
 
-                logits_rgb = image_features_rgb @ text_feature_rgb.t()
-                logits_ir = image_features_ir @ text_feature_ir.t()
+                score_rgb, feat_rgb, image_features_rgb, score_ir, feat_ir, image_features_ir = model(x1=img_rgb, x2=img_ir, modal=0)
 
-                loss_rgb = loss_fn_rgb(score_rgb, feat_rgb, label_rgb, logits_rgb)
-                loss_ir = loss_fn_ir(score_ir, feat_ir, label_ir, logits_ir)
+                # print(score_ir[0].shape, score_rgb[0].shape)
+
+                logits_rgb = image_features_rgb @ text_features_rgb.t()
+                logits_ir = image_features_ir @ text_features_ir.t()
+
+                loss_rgb = loss_fn_rgb(score_rgb, feat_rgb, logits_rgb, label_rgb)
+                loss_ir = loss_fn_ir(score_ir, feat_ir, logits_ir, label_ir)
 
                 ID_LOSS_RGB, TRI_LOSS_RGB, I2TLOSS_RGB = loss_rgb
                 ID_LOSS_IR, TRI_LOSS_IR, I2TLOSS_IR = loss_ir
@@ -333,12 +337,23 @@ def do_train_stage2(args,
             losses.update(loss.item())
             torch.cuda.synchronize()
             if n_iter % args.print_freq == 0:
-                print("Epoch[{}] Iteration[{}/{}], Loss_rgb_ir_i2t_id_tri: ({:.3f})({:.3f})({:.3f})({:.3f}) ({:.3f}), Base Lr: {:.2e}"
+                print("Epoch[{}] Iteration[{}/{}], Loss_rgb_ir_i2t_id_tri: ({:.3f}) ({:.3f}) ({:.3f}) ({:.3f}) ({:.3f}) ({:.3f}), Base Lr: {:.2e}"
                  .format(epoch, (n_iter + 1), len(trainloader), losses_rgb.avg, losses_ir.avg,
                          losses_i2t.avg, losses_id.avg, losses_tri.avg, losses.avg,scheduler.get_lr()[0]))
 
+
         if epoch % args.eval_step == 0 or (epoch == args.stage2_maxepochs):
+            print("start test")
+        # if True:
             if args.dataset == 'sysu':
+                # state = {
+                #     "state_dict": model.state_dict(),
+                #     "cmc": cmc,
+                #     "mAP": mAP,
+                #     "mINP": mINP,
+                #     "epoch": epoch,
+                # }
+                # torch.save(model.state_dict(), os.path.join(args.model_path, args.logs_file + "_stage2.pth"))
                 print('Test Epoch: {}'.format(epoch))
                 test_mode = [1, 2]
                 query_img, query_label, query_cam = process_query_sysu(args.data_path, mode=args.mode)
@@ -352,7 +367,7 @@ def do_train_stage2(args,
                     gall_loader = data.DataLoader(gallset, batch_size=args.test_batch_size, shuffle=False, num_workers=args.workers)
 
                     cmc, mAP, mINP = tester(args, epoch, model, test_mode, gall_label, gall_loader, query_label, query_loader,
-                                            feat_dim=2048,
+                                            feat_dim=3072,
                                             query_cam=query_cam, gall_cam=gall_cam)
 
                     if trial == 0:
@@ -385,7 +400,7 @@ def do_train_stage2(args,
                         "mINP": mINP,
                         "epoch": epoch,
                     }
-                    torch.save(state, os.path.join(args.model_path, args.logs_file + "_stage2.pth"))
+                    torch.save(state, os.path.join(args.model_path, args.logs_file + "_stage2_add.pth"))
                 print("Best Epoch [{}], Rank-1: {:.2%} |  mAP: {:.2%}| mINP: {:.2%}".format(best_epoch, best_acc, best_mAP, best_mINP))
             elif args.dataset == 'regdb':
                 print('Test Epoch: {}'.format(epoch))
@@ -402,7 +417,7 @@ def do_train_stage2(args,
                 query_loader = data.DataLoader(queryset, batch_size=args.test_batch_size, shuffle=False, num_workers=args.workers)
 
                 cmc, mAP, mINP = tester(args, epoch, model, test_mode, gall_label, gall_loader, query_label, query_loader,
-                                        feat_dim=2048)
+                                        feat_dim=3072)
 
                 print(
                     "Performance[ALL]: Rank-1: {:.2%} | Rank-5: {:.2%} | Rank-10: {:.2%}| Rank-20: {:.2%}| mAP: {:.2%}| mINP: {:.2%}".format(

@@ -41,7 +41,9 @@ def get_cluster_loader(dataset, batch_size, workers):
     cluster_loader = data.DataLoader(
         dataset,
         batch_size=batch_size, num_workers=workers,
-        shuffle=False, pin_memory=True)
+        shuffle=False
+        # , pin_memory=True
+    )
     return cluster_loader
 
 
@@ -261,7 +263,7 @@ def do_train_stage0(args,
                     gall_loader = data.DataLoader(gallset, batch_size=args.test_batch_size, shuffle=False, num_workers=args.workers)
 
                     cmc, mAP, mINP = tester(args, epoch, model, test_mode, gall_label, gall_loader, query_label, query_loader,
-                                            feat_dim=2048,
+                                            feat_dim=3072,
                                             query_cam=query_cam, gall_cam=gall_cam)
 
                     if trial == 0:
@@ -313,7 +315,7 @@ def do_train_stage0(args,
                 query_loader = data.DataLoader(queryset, batch_size=args.test_batch_size, shuffle=False, num_workers=args.workers)
 
                 cmc, mAP, mINP = tester(args, epoch, model, test_mode, gall_label, gall_loader, query_label, query_loader,
-                                        feat_dim=2048)
+                                        feat_dim=3072)
 
                 print(
                     "Performance[ALL]: Rank-1: {:.2%} | Rank-5: {:.2%} | Rank-10: {:.2%}| Rank-20: {:.2%}| mAP: {:.2%}| mINP: {:.2%}".format(
