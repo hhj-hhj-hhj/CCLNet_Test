@@ -16,6 +16,8 @@ from util.eval_metrics import eval_sysu, eval_regdb
 from data.data_manager import process_query_sysu, process_gallery_sysu, process_test_regdb
 
 import os
+import yaml
+import easydict
 os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
 def main():
@@ -39,7 +41,7 @@ def main_worker(args):
     data_set = args.dataset
     feat_dim=3072
     if data_set == 'sysu':
-        data_path = '/home/cz/dataset/SYSU-MM01/'
+        data_path = 'E:\\hhj\\SYSU-MM01\\'
         test_mode = [1, 2]
     elif data_set== 'regdb':
         data_path = '/home/cz/dataset/RegDB/'
@@ -47,16 +49,11 @@ def main_worker(args):
 
     ## build model
     print('==> Building model..')
-    train_color_label = np.load(data_path +'pseudo_labels/' + 'train_rgb_resized_pseudo_label.npy')
-    train_thermal_label = np.load(data_path +'pseudo_labels/' + 'train_ir_resized_pseudo_label.npy')
-    if -1 in train_color_label:
-        n_color_class = len(np.unique(train_color_label)) - 1
-    else:
-        n_color_class = len(np.unique(train_color_label)) 
-    if -1 in train_thermal_label:
-        n_thermal_class = len(np.unique(train_thermal_label)) - 1
-    else:
-        n_thermal_class = len(np.unique(train_thermal_label))
+    train_color_label = np.load(data_path + 'train_rgb_resized_label.npy')
+    train_thermal_label = np.load(data_path + 'train_ir_resized_label.npy')
+
+    n_color_class = len(np.unique(train_color_label))
+    n_thermal_class = len(np.unique(train_thermal_label))
 
     model = build_model(args, n_color_class, n_thermal_class)
     model.cuda()
@@ -252,5 +249,7 @@ if __name__ == "__main__":
                         metavar='tb', help='testing batch size')
 
     args = parser.parse_args()
+    args = yaml.load(open('config/config_sysu.yaml'), Loader=yaml.FullLoader)
+    args = easydict.EasyDict(args)
 
     main_worker(args)

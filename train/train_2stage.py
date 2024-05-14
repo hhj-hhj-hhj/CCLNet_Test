@@ -337,9 +337,9 @@ def do_train_stage2(args,
             losses.update(loss.item())
             torch.cuda.synchronize()
             if n_iter % args.print_freq == 0:
-                print("Epoch[{}] Iteration[{}/{}], Loss_rgb_ir_i2t_id_tri: ({:.3f}) ({:.3f}) ({:.3f}) ({:.3f}) ({:.3f}) ({:.3f}), Base Lr: {:.2e}"
+                print("Epoch[{}] Iteration[{}/{}], Loss_rgb_ir_i2t_id_tri: ({:.3f}) ({:.3f}) ({:.3f}) ({:.3f}) ({:.3f}) , Base Lr: {:.2e}"
                  .format(epoch, (n_iter + 1), len(trainloader), losses_rgb.avg, losses_ir.avg,
-                         losses_i2t.avg, losses_id.avg, losses_tri.avg, losses.avg,scheduler.get_lr()[0]))
+                         losses_i2t.avg, losses_id.avg, losses_tri.avg,scheduler.get_lr()[0]))
 
 
         if epoch % args.eval_step == 0 or (epoch == args.stage2_maxepochs):

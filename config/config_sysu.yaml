@@ -31,7 +31,7 @@ weight_decay_bias: 0.0005
 steps: [30,50]
 gamma: 0.1
 step_size: 20
-resume_path:
+resume_path: "save\\checkpoints\\uploadgithub_test_sysu_stage2_add.pth"
 warmup_factor: 0.01
 warmup_iters: 10
 warmup_method: 'linear'
@@ -80,9 +80,9 @@ vis_log_dir: save/logs/vis_log/
 model_path: save/checkpoints/
 
 #loss weight
-id_loss_weight: 1
-triplet_loss_weight: 1.0
-i2t_loss_weight: 1.0
+id_loss_weight: 1.0
+triplet_loss_weight: 0.15
+i2t_loss_weight: 0.1
 margin: 0.3
 
-neck_feat : before
+neck_feat : "after"
