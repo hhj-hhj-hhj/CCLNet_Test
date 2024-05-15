@@ -1,5 +1,5 @@
 import torch
-
+from torch import optim
 
 def make_optimizer_1stage(args, model):
     params = []
@@ -64,3 +64,20 @@ def make_optimizer_2stage_later(args, model_net):
     return optimizer_net
 
 
+def make_optimizer_3stage(args, img2text):
+    exclude = lambda n: "bn" in n or "ln" in n or "bias" in n or 'logit_scale' in n
+    include = lambda n: not exclude(n)
+    named_parameters = list(img2text.named_parameters())
+    gain_or_bias_params = [p for n, p in named_parameters if exclude(n) and p.requires_grad]
+    rest_params = [p for n, p in named_parameters if include(n) and p.requires_grad]
+
+    optimizer = optim.AdamW(
+        [
+            {"params": gain_or_bias_params, "weight_decay": 0.},
+            {"params": rest_params, "weight_decay": args.wd},
+        ],
+        lr=args.lr,
+        betas=(args.beta1, args.beta2),
+        eps=args.eps,
+    )
+    return optimizer

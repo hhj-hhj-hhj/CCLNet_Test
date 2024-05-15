@@ -15,15 +15,20 @@ import torch.utils.data as data
 import torchvision.transforms as transforms
 from torch.backends import cudnn
 
+from train.train_3stage import do_train_stage3
 from train.train_2stage import do_train_stage2
 from util.loss.make_loss import make_loss
 from train.train_1stage import do_train_stage1
-from util.make_optimizer import make_optimizer_1stage, make_optimizer_2stage
+from util.make_optimizer import make_optimizer_1stage, make_optimizer_2stage, make_optimizer_3stage
 from util.optim.lr_scheduler import WarmupMultiStepLR
 from util.optim.scheduler_factory import create_scheduler
 from data.dataloader import Unlabeld_SYSUData_Pseudo, SYSUData_Stage1
 from model.make_model_clip import build_model
 from util.utils import Logger
+from model.make_model_clip import load_clip_to_cpu
+from util.optim.scheduler_p2w import cosine_lr
+
+from model.img2text import IMG2TEXT
 
 start_epoch = best_mAP = 0
 
@@ -107,7 +112,7 @@ def main_worker(args):
     scheduler_1stage = create_scheduler(optimizer_1stage, num_epochs=args.stage1_maxepochs, lr_min=args.stage1_lrmin,
                                            warmup_lr_init=args.stage1_warmup_lrinit, warmup_t=args.stage1_warmup_epoch, noise_range=None)
 
-    do_train_stage1(args, dataset, model, optimizer_1stage, scheduler_1stage)
+    # do_train_stage1(args, dataset, model, optimizer_1stage, scheduler_1stage)
 
     optimizer_2stage = make_optimizer_2stage(args, model)
     scheduler_2stage = WarmupMultiStepLR(optimizer_2stage, args.stage2_steps, args.stage2_gamma, args.stage2_warmup_factor,
@@ -116,7 +121,11 @@ def main_worker(args):
     loss_func_rgb = make_loss(args, num_classes=n_color_class)
     loss_func_ir = make_loss(args, num_classes=n_thermal_class)
 
-    do_train_stage2(args, dataset, model, optimizer_2stage, scheduler_2stage, loss_func_rgb, loss_func_ir)
+    # do_train_stage2(args, dataset, model, optimizer_2stage, scheduler_2stage, loss_func_rgb, loss_func_ir)
+
+
+
+    do_train_stage3(args, model)
 
     end_time = time.monotonic()
     print('Total running time: ', timedelta(seconds=end_time - start_time))

@@ -2,7 +2,8 @@
 
 #dataset configs
 dataset: sysu
-data_path: "D:\\dataset\\SYSU-MM01\\"
+#data_path: "D:\\dataset\\SYSU-MM01\\"
+data_path: "E:\\hhj\\SYSU-MM01\\"
 pseudo_labels_path: /home/cz/dataset/SYSU-MM01/pseudo_labels/  # Do not modify the file name 'pseudo_labels' in your dataset!!
 batch_size: 4
 test_batch_size: 64
@@ -31,7 +32,7 @@ weight_decay_bias: 0.0005
 steps: [30,50]
 gamma: 0.1
 step_size: 20
-resume_path: "save\\checkpoints\\uploadgithub_test_sysu_stage2_add.pth"
+resume_path: "save\\checkpoints\\uploadgithub_test_sysu_stage2_V1.pth"
 warmup_factor: 0.01
 warmup_iters: 10
 warmup_method: 'linear'
@@ -72,6 +73,19 @@ stage2_warmup_method: 'linear'
 
 stage2_ims_per_batch: 128
 
+#stage3
+stage3_lr: 5e-4
+stage3_wd: 0.2
+stage3_maxepochs: 64
+stage3_warmup_epoch: 1
+stage3_beta1: 0.9
+stage3_beta2: 0.999
+stage3_eps: 1e-8
+stage3_ims_per_batch: 64
+
+middle_dim: 512
+n_layer: 2
+
 #log path
 logs_dir: save/logs/sysu/
 logs_time: 24-5-12
@@ -81,8 +95,8 @@ model_path: save/checkpoints/
 
 #loss weight
 id_loss_weight: 1.0
-triplet_loss_weight: 0.15
-i2t_loss_weight: 0.1
+triplet_loss_weight: 1.0
+i2t_loss_weight: 1.0
 margin: 0.3
 
 neck_feat : "after"

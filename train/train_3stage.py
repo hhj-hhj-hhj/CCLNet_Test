@@ -1,139 +1,203 @@
-import logging
+import argparse
+import collections
 import os
+import os.path as osp
+import shutil
+from datetime import timedelta
 import time
+import sys
+import random
+
+import easydict
+import numpy as np
+import yaml
+from sklearn.cluster import DBSCAN
+
 import torch
 import torch.nn as nn
-from util.utils import AverageMeter
+import torch.utils.data as data
+from torch.cuda.amp import autocast
+import torchvision.transforms as transforms
+import torch.nn.functional as F
+# from tensorboardX import SummaryWriter
 from torch.cuda import amp
-import torch.distributed as dist
-from torch.nn import functional as F
+
+from util.eval_metrics import extract_features_clip
+from util.faiss_rerank import compute_jaccard_distance
 from util.loss.supcontrast import SupConLoss
-from model.img2text import get_text_features, get_loss_img2text, get_loss
+from util.utils import AverageMeter
 from model.make_model_clip import load_clip_to_cpu
+from util.optim.scheduler_p2w import cosine_lr
+from model.img2text import IMG2TEXT
+from util.make_optimizer import make_optimizer_3stage
+
+from ClusterContrast.cm import ClusterMemory
+from data.data_manager import process_query_sysu, process_gallery_sysu
+from data.data_manager import process_test_regdb
+from data.dataloader import SYSUData_Stage2, RegDBData_Stage2, IterLoader, TestData
+from util.eval import tester
+from util.utils import IdentitySampler_nosk, GenIdx
+from model.img2text import get_loss_img2text
+
+from util.make_optimizer import make_optimizer_2stage, make_optimizer_2stage_later
+from util.optim.lr_scheduler import WarmupMultiStepLR
 
 
-def do_train_stage3(cfg,
-                    model,
-                    img2text,
-                    center_criterion,
-                    train_loader_stage2_all,
-                    optimizer,
-                    # optimizer_center,
-                    scheduler,
-                    loss_fn,
-                    local_rank):
-    log_period = cfg.SOLVER.STAGE3.LOG_PERIOD
-    checkpoint_period = cfg.SOLVER.STAGE3.CHECKPOINT_PERIOD
-    eval_period = cfg.SOLVER.STAGE3.EVAL_PERIOD
-    instance = cfg.DATALOADER.NUM_INSTANCE
+def get_cluster_loader(dataset, batch_size, workers):
+    cluster_loader = data.DataLoader(
+        dataset,
+        batch_size=batch_size, num_workers=workers,
+        shuffle=False
+        # , pin_memory=True
+    )
+    return cluster_loader
 
-    device = "cuda"
-    model.eval()
-    img2text.train()
-    epochs = cfg.SOLVER.STAGE3.MAX_EPOCHS
+def do_train_stage3(args,
+                    model):
+    best_acc = 0
+    device = 'cuda'
+    epochs = args.stage2_maxepochs
+    start_time = time.monotonic()
 
-    logger = logging.getLogger("transreid_VI.train")
-    logger.info('start training stage3')
-    _LOCAL_PROCESS_GROUP = None
-    if device:
-        model.to(local_rank)
-        img2text.to(local_rank)
-        if torch.cuda.device_count() > 1:
-            print('Using {} GPUs for training'.format(torch.cuda.device_count()))
-            model = nn.DataParallel(model)
-            img2text = nn.DataParallel(img2text)
-        #     num_classes = model.module.num_classes
-        # else:
-        #     num_classes = model.num_classes
+    normalizer = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+    if args.dataset == 'sysu':
+        transform_train_rgb = transforms.Compose([
+            transforms.ToPILImage(),
+            transforms.RandomGrayscale(p=0.5),
+            transforms.RandomHorizontalFlip(p=0.5),
+            transforms.Pad(10),
+            transforms.RandomCrop((args.img_h, args.img_w)),
+            transforms.ToTensor(),
+            normalizer,
+            transforms.RandomErasing(p=0.5)
+        ])
+        transform_train_ir = transforms.Compose([
+            transforms.ToPILImage(),
+            transforms.RandomHorizontalFlip(p=0.5),
+            transforms.Pad(10),
+            transforms.RandomCrop((args.img_h, args.img_w)),
+            transforms.ToTensor(),
+            normalizer,
+            transforms.RandomErasing(p=0.5),
+        ])
+    else:
+        transform_train_rgb = transforms.Compose([
+        transforms.ToPILImage(),
+        transforms.RandomGrayscale(p=0.5),
+        transforms.Resize((args.img_h, args.img_w)),
+        transforms.ToTensor(),
+        normalizer,
+        transforms.RandomErasing(p=0.5),
+        ])
+        transform_train_ir = transforms.Compose([
+            transforms.ToPILImage(),
+            transforms.Resize((args.img_h, args.img_w)),
+            transforms.ToTensor(),
+            normalizer,
+            transforms.RandomErasing(p=0.5),
+        ])
+    transform_test = transforms.Compose([
+        transforms.ToPILImage(),
+        transforms.Resize((args.img_h, args.img_w)),
+        transforms.ToTensor(),
+        normalizer,
+    ])
 
-    loss_meter = AverageMeter()
-    acc_meter = AverageMeter()
+    batch = args.stage3_ims_per_batch
+    epochs = args.stage3_epochs
+    num_classes_rgb = model.num_classes_rgb
+    num_classes_ir = model.num_classes_ir
 
-    # evaluator = R1_mAP_eval(num_query, max_rank=50, feat_norm=cfg.TEST.FEAT_NORM)
-    scaler = amp.GradScaler()
-    xent = SupConLoss(device)
-
-    loss_img = nn.CrossEntropyLoss()
-    loss_txt = nn.CrossEntropyLoss()
-
-    loss_img.to(device)
-    loss_txt.to(device)
 
     clip_model = load_clip_to_cpu(model.model_name, model.h_resolution, model.w_resolution, model.vision_stride_size)
     clip_model.to("cuda")
 
-    # train
-    from datetime import timedelta
-    all_start_time = time.monotonic()
+    img2text = IMG2TEXT(embed_dim=1024,
+                        middle_dim=args.middle_dim,
+                        output_dim=clip_model.token_embedding.weight.shape[1],
+                        n_layer=args.n_layer)
 
-    batch = cfg.SOLVER.STAGE3.IMS_PER_BATCH
+    exclude = lambda n: "bn" in n or "ln" in n or "bias" in n or 'logit_scale' in n
+    include = lambda n: not exclude(n)
+    named_parameters = list(img2text.named_parameters())
+    gain_or_bias_params = [p for n, p in named_parameters if exclude(n) and p.requires_grad]
+    rest_params = [p for n, p in named_parameters if include(n) and p.requires_grad]
 
-    num_batches_per_epoch = len(train_loader_stage2_all)
+    model.eval()
+    img2text.train()
+
+    model.to(device)
+    img2text.to(device)
+
+
+    scaler = amp.GradScaler()
+    losses_i2t_rgb2rgb = AverageMeter()
+    losses_i2t_rgb2ir = AverageMeter()
+    losses_i2t_ir2rgb = AverageMeter()
+    losses_i2t_ir2ir = AverageMeter()
+
+    loss_img = nn.CrossEntropyLoss()
+    loss_txt = nn.CrossEntropyLoss()
+    loss_img.to(device)
+    loss_txt.to(device)
+
+    end = end = time.time()
+    if args.dataset == 'sysu':
+        trainset = SYSUData_Stage2(args.data_path, transform_train_rgb, transform_train_ir)
+    else:
+        trainset = RegDBData_Stage2(args.data_path, args.trial, transform_train_rgb, transform_train_ir)
+    print("New Dataset Information---- ")
+    print("  ----------------------------")
+    print("  subset   | # ids | # images")
+    print("  ----------------------------")
+    print("  visible  | {:5d} | {:8d}".format(len(np.unique(trainset.train_color_label)),
+                                              len(trainset.train_color_image)))
+    print("  thermal  | {:5d} | {:8d}".format(len(np.unique(trainset.train_thermal_label)),
+                                              len(trainset.train_thermal_image)))
+    print("  ----------------------------")
+    print("Data loading time:\t {:.3f}".format(time.time() - end))
+
+    color_pos, thermal_pos = GenIdx(trainset.train_color_label, trainset.train_thermal_label)
+
+    sampler = IdentitySampler_nosk(trainset.train_color_label, trainset.train_thermal_label, color_pos, thermal_pos,
+                                   args.num_instances, args.batch_size)
+
+    trainset.cIndex = sampler.index1
+    trainset.tIndex = sampler.index2
+
+    trainloader = data.DataLoader(trainset, batch_size=args.batch_size * args.num_instances, sampler=sampler,
+                                  num_workers=args.workers,
+                                  drop_last=True)
+
+    num_batches_per_epoch = len(trainloader)
+
+    optimizer_3stage = make_optimizer_3stage(args, img2text)
+    scheduler_3stage = cosine_lr(optimizer_3stage, args.lr,
+                                 args.stage3_warmup_epoch * num_batches_per_epoch,
+                                 args.stage3_maxepochs * num_batches_per_epoch)
 
     for epoch in range(1, epochs + 1):
-        start_time = time.time()
-        loss_meter.reset()
-        # evaluator.reset()
+        losses_i2t_ir2ir.reset()
+        losses_i2t_ir2rgb.reset()
+        losses_i2t_rgb2ir.reset()
+        losses_i2t_rgb2rgb.reset()
 
-        # scheduler.step()
+        tot_step = epoch * num_batches_per_epoch
 
-        for n_iter, (img, vid, target_cam, target_view) in enumerate(train_loader_stage2_all):
-            # img = img.to(device)
-            # target = vid.to(device)
-            # target_cam = target_cam.to(device)
-            # target_view = target_view.to(device)
+        for i, (img1, img2, label1, label2) in enumerate(trainloader):
+            img1 = img1.to(device)
+            img2 = img2.to(device)
 
-            # data_time = time.time() - start_time
+            label1 = label1.to(device)
+            label2 = label2.to(device)
 
-            step = epoch * num_batches_per_epoch + n_iter
-            scheduler(step)
-            optimizer.zero_grad()
+            step = (epoch - 1) * num_batches_per_epoch + i
+            scheduler_3stage(step)
+            optimizer_3stage.zero_grad()
 
-            img = img.cuda(device, non_blocking=True)
-
-            with amp.autocast(enabled=True):
-                total_loss = get_loss_img2text(model, img2text, img, loss_img, loss_txt, clip_model)
-                scaler.scale(total_loss).backward()
-                scaler.step(optimizer)
+            with autocast():
+                loss = get_loss_img2text(model,img2text,img1,loss_img,loss_txt,clip_model,"A person photo of")
+                scaler.scale(loss).backward()
+                scaler.step(optimizer_3stage)
             scaler.update()
-
-            if (n_iter + 1) % log_period == 0:
-                loss_meter.update(total_loss.item())
-                logger.info(
-                    "Epoch[{}] Iteration[{}/{}] Loss: {:.6f} Base Lr: {:.2e}".format(epoch, n_iter + 1,
-                                                                                    num_batches_per_epoch,
-                                                                                    total_loss.item(),
-                                                                                    optimizer.param_groups[0]['lr'])
-                )
-        end_time = time.time()
-        time_per_batch = (end_time - start_time) / num_batches_per_epoch
-
-        if cfg.MODEL.DIST_TRAIN:
-            pass
-        else:
-            logger.info("Epoch {} done. Time per batch: {:.3f}[s] Speed: {:.1f}[samples/s]"
-                        .format(epoch, time_per_batch, train_loader_stage2_all.batch_size / time_per_batch))
-
-        if epoch % checkpoint_period == 0:
-            if cfg.MODEL.DIST_TRAIN:
-                if dist.get_rank() == 0:
-                    torch.save(img2text.state_dict(),
-                               os.path.join(cfg.OUTPUT_DIR, cfg.MODEL.NAME + '_img2text_{}_VI.pth'.format(epoch)))
-            else:
-                torch.save(img2text.state_dict(),
-                           os.path.join(cfg.OUTPUT_DIR, cfg.MODEL.NAME + '_img2text_{}_VI.pth'.format(epoch)))
-
-            # batch_time = time.time() - start_time
-            #
-            # timestep = epoch * num_batches_per_epoch + n_iter
-            # log_data = {
-            #     "loss": total_loss.item(),
-            #     "data_time": data_time,
-            #     "batch_time": batch_time,
-            #     "lr": optimizer.param_groups[0]["lr"]
-            # }
-
-
-
-
 
