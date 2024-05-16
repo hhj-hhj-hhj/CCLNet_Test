@@ -1,37 +1,15 @@
-import argparse
-import collections
 import os
-import os.path as osp
-import shutil
 from datetime import timedelta
 import time
-import sys
-import random
-
-import easydict
 import numpy as np
-import yaml
-from sklearn.cluster import DBSCAN
-
 import torch
 import torch.nn as nn
 import torch.utils.data as data
-from torch.cuda.amp import autocast
 import torchvision.transforms as transforms
-import torch.nn.functional as F
-# from tensorboardX import SummaryWriter
 from torch.cuda import amp
-
-from util.eval_metrics import extract_features_clip
-from util.faiss_rerank import compute_jaccard_distance
-from util.loss.supcontrast import SupConLoss
 from util.utils import AverageMeter
-from model.make_model_clip import load_clip_to_cpu
-from util.optim.scheduler_p2w import cosine_lr
-from model.img2text import IMG2TEXT
-from util.make_optimizer import make_optimizer_3stage
 
-from ClusterContrast.cm import ClusterMemory
+
 from data.data_manager import process_query_sysu, process_gallery_sysu
 from data.data_manager import process_test_regdb
 from data.dataloader import SYSUData_Stage2, RegDBData_Stage2, IterLoader, TestData
@@ -39,8 +17,6 @@ from util.eval import tester
 from util.utils import IdentitySampler_nosk_stage4, GenIdx
 from model.img2text import get_loss_img2text, get_text_features
 
-from util.make_optimizer import make_optimizer_2stage, make_optimizer_2stage_later
-from util.optim.lr_scheduler import WarmupMultiStepLR
 
 
 def get_cluster_loader(dataset, batch_size, workers):
@@ -60,7 +36,6 @@ def do_train_stage4(args,
                     scheduler):
     best_acc = 0
     device = 'cuda'
-    epochs = args.stage4_maxepochs
     start_time = time.monotonic()
 
     normalizer = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
@@ -107,10 +82,7 @@ def do_train_stage4(args,
         normalizer,
     ])
 
-    batch = args.stage4_ims_per_batch
     epochs = args.stage4_maxepochs
-    num_classes_rgb = model.num_classes_rgb
-    num_classes_ir = model.num_classes_ir
 
     model.to(device)
     img2text.to(device)
@@ -126,7 +98,7 @@ def do_train_stage4(args,
 
     loss_i2t = nn.CrossEntropyLoss()
 
-    end = end = time.time()
+    end = time.time()
     if args.dataset == 'sysu':
         trainset = SYSUData_Stage2(args.data_path, transform_train_rgb, transform_train_ir)
     else:
@@ -158,6 +130,7 @@ def do_train_stage4(args,
 
 
     for epoch in range(1, epochs + 1):
+        # end = time.time()
         losses_i2t_rgb2rgb.reset()
         losses_i2t_rgb2ir.reset()
         losses_i2t_ir2rgb.reset()
@@ -182,22 +155,27 @@ def do_train_stage4(args,
                     token_features_rgb = img2text(image_features_rgb)
                     token_features_ir = img2text(image_features_ir)
 
-                    text_features_rgb = get_text_features(token_features_rgb, clip_model, clip_model.dtype, "A visible photo of")
-                    text_features_ir = get_text_features(token_features_ir, clip_model, clip_model.dtype, "An infrared photo of")
+                    text_features_rgb2rgb = get_text_features(token_features_rgb, clip_model, clip_model.dtype, "A visible photo of")
+                    text_features_rgb2ir = get_text_features(token_features_rgb, clip_model, clip_model.dtype, "An infrared photo of")
+                    text_features_ir2rgb = get_text_features(token_features_ir, clip_model, clip_model.dtype, "A visible photo of")
+                    text_features_ir2ir = get_text_features(token_features_ir, clip_model, clip_model.dtype, "An infrared photo of")
 
                 image_features_rgb = image_features_rgb / image_features_rgb.norm(dim=-1, keepdim=True)
                 image_features_ir = image_features_ir / image_features_ir.norm(dim=-1, keepdim=True)
 
-                text_features_rgb = text_features_rgb / text_features_rgb.norm(dim=-1, keepdim=True)
-                text_features_ir = text_features_ir / text_features_ir.norm(dim=-1, keepdim=True)
+                text_features_rgb2rgb = text_features_rgb2rgb / text_features_rgb2rgb.norm(dim=-1, keepdim=True)
+                text_features_rgb2ir = text_features_rgb2ir / text_features_rgb2ir.norm(dim=-1, keepdim=True)
+                text_features_ir2rgb = text_features_ir2rgb / text_features_ir2rgb.norm(dim=-1, keepdim=True)
+                text_features_ir2ir = text_features_ir2ir / text_features_ir2ir.norm(dim=-1, keepdim=True)
+
 
                 ground_truth = torch.arange(len(image_features_rgb)).long()
                 ground_truth = ground_truth.to(device)
 
-                logits_rgb2rgb = image_features_rgb @ text_features_rgb.t()
-                logits_rgb2ir = image_features_rgb @ text_features_ir.t()
-                logits_ir2rgb = image_features_ir @ text_features_rgb.t()
-                logits_ir2ir = image_features_ir @ text_features_ir.t()
+                logits_rgb2rgb = image_features_rgb @ text_features_rgb2rgb.t()
+                logits_ir2rgb = image_features_rgb @ text_features_ir2rgb.t()
+                logits_rgb2ir = image_features_ir @ text_features_rgb2ir.t()
+                logits_ir2ir = image_features_ir @ text_features_ir2ir.t()
 
                 loss_rgb2rgb = loss_i2t(logits_rgb2rgb, ground_truth)
                 loss_rgb2ir = loss_i2t(logits_rgb2ir, ground_truth)
@@ -208,6 +186,8 @@ def do_train_stage4(args,
 
 
             scaler.scale(loss)
+            scaler.step(optimizer)
+            scaler.update()
 
             losses_i2t_rgb2rgb.update(loss_rgb2rgb.item())
             losses_i2t_rgb2ir.update(loss_rgb2ir.item())
@@ -275,7 +255,7 @@ def do_train_stage4(args,
                         "mINP": mINP,
                         "epoch": epoch,
                     }
-                    torch.save(state, os.path.join(args.model_path, args.logs_file + "_stage4_V5.pth"))
+                    torch.save(state, os.path.join(args.model_path, args.logs_file + "_stage4_V1.pth"))
                 print("Best Epoch [{}], Rank-1: {:.2%} |  mAP: {:.2%}| mINP: {:.2%}".format(best_epoch, best_acc,
                                                                                             best_mAP, best_mINP))
             elif args.dataset == 'regdb':
