@@ -117,12 +117,6 @@ def do_train_stage3(args,
                         output_dim=clip_model.token_embedding.weight.shape[1],
                         n_layer=args.n_layer)
 
-    exclude = lambda n: "bn" in n or "ln" in n or "bias" in n or 'logit_scale' in n
-    include = lambda n: not exclude(n)
-    named_parameters = list(img2text.named_parameters())
-    gain_or_bias_params = [p for n, p in named_parameters if exclude(n) and p.requires_grad]
-    rest_params = [p for n, p in named_parameters if include(n) and p.requires_grad]
-
     model.eval()
     img2text.train()
 
@@ -131,10 +125,12 @@ def do_train_stage3(args,
 
 
     scaler = amp.GradScaler()
-    losses_i2t_rgb2rgb = AverageMeter()
-    losses_i2t_rgb2ir = AverageMeter()
-    losses_i2t_ir2rgb = AverageMeter()
-    losses_i2t_ir2ir = AverageMeter()
+    # losses_i2t_rgb2rgb = AverageMeter()
+    # losses_i2t_rgb2ir = AverageMeter()
+    # losses_i2t_ir2rgb = AverageMeter()
+    # losses_i2t_ir2ir = AverageMeter()
+    losses_rgb = AverageMeter()
+    losses_ir = AverageMeter()
 
     loss_img = nn.CrossEntropyLoss()
     loss_txt = nn.CrossEntropyLoss()
@@ -177,27 +173,47 @@ def do_train_stage3(args,
                                  args.stage3_maxepochs * num_batches_per_epoch)
 
     for epoch in range(1, epochs + 1):
-        losses_i2t_ir2ir.reset()
-        losses_i2t_ir2rgb.reset()
-        losses_i2t_rgb2ir.reset()
-        losses_i2t_rgb2rgb.reset()
+        # losses_i2t_ir2ir.reset()
+        # losses_i2t_ir2rgb.reset()
+        # losses_i2t_rgb2ir.reset()
+        # losses_i2t_rgb2rgb.reset()
 
-        tot_step = epoch * num_batches_per_epoch
+        losses_rgb.reset()
+        losses_ir.reset()
 
-        for i, (img1, img2, label1, label2) in enumerate(trainloader):
+
+        for n_iter, (img1, img2, label1, label2) in enumerate(trainloader):
             img1 = img1.to(device)
             img2 = img2.to(device)
 
             label1 = label1.to(device)
             label2 = label2.to(device)
 
-            step = (epoch - 1) * num_batches_per_epoch + i
+            step = (epoch - 1) * num_batches_per_epoch + n_iter
             scheduler_3stage(step)
             optimizer_3stage.zero_grad()
 
             with autocast():
-                loss = get_loss_img2text(model,img2text,img1,loss_img,loss_txt,clip_model,"A person photo of")
+                loss_rgb = get_loss_img2text(model,img2text,img1,loss_img,loss_txt,clip_model,1,"A person photo of")
+                loss_ir = get_loss_img2text(model,img2text,img2,loss_img,loss_txt,clip_model,2,"A person photo of")
+
+                loss = (loss_rgb + loss_ir) / 2
                 scaler.scale(loss).backward()
                 scaler.step(optimizer_3stage)
             scaler.update()
 
+
+            losses_rgb.update(loss_rgb.item())
+            losses_ir.update(loss_ir.item())
+
+            if n_iter % args.print_freq == 0:
+                print(
+                    "Epoch[{}] Iteration[{}/{}] Loss_rgb_ir: ({:.6f}) ({:.6f}) Base Lr: {:.2e}".format(epoch, n_iter + 1,
+                                                                                    num_batches_per_epoch,
+                                                                                    losses_rgb.avg,
+                                                                                    losses_ir.avg,
+                                                                                    optimizer_3stage.param_groups[0]['lr'])
+                )
+        if epoch % args.eval_step == 0 or (epoch == args.stage3_maxepochs):
+            torch.save(img2text.state_dict(),
+                       os.path.join(args.model_path, args.logs_file + '_img2text_{}.pth'.format(epoch)))

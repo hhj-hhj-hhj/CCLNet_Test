@@ -346,14 +346,6 @@ def do_train_stage2(args,
             print("start test")
         # if True:
             if args.dataset == 'sysu':
-                # state = {
-                #     "state_dict": model.state_dict(),
-                #     "cmc": cmc,
-                #     "mAP": mAP,
-                #     "mINP": mINP,
-                #     "epoch": epoch,
-                # }
-                # torch.save(model.state_dict(), os.path.join(args.model_path, args.logs_file + "_stage2.pth"))
                 print('Test Epoch: {}'.format(epoch))
                 test_mode = [1, 2]
                 query_img, query_label, query_cam = process_query_sysu(args.data_path, mode=args.mode)
@@ -400,7 +392,7 @@ def do_train_stage2(args,
                         "mINP": mINP,
                         "epoch": epoch,
                     }
-                    torch.save(state, os.path.join(args.model_path, args.logs_file + "_stage2_add.pth"))
+                    torch.save(state, os.path.join(args.model_path, args.logs_file + "_stage2_V5.pth"))
                 print("Best Epoch [{}], Rank-1: {:.2%} |  mAP: {:.2%}| mINP: {:.2%}".format(best_epoch, best_acc, best_mAP, best_mINP))
             elif args.dataset == 'regdb':
                 print('Test Epoch: {}'.format(epoch))

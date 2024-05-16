@@ -55,11 +55,11 @@ def get_text_features(token_features, clip_model, dtype, text):
     text_features = encode_text_img(text, token_features, clip_model, dtype)
     return text_features
 
-def get_loss_img2text(model, img2text, images, loss_img, loss_txt, clip_model, text):
+def get_loss_img2text(model, img2text, images, loss_img, loss_txt, clip_model, modal, text):
 
     device = "cuda"
     with torch.no_grad():
-        image_features = model(images, get_image=True)
+        image_features = model(x1 = images, x2 = images, modal = modal, get_image=True)
     token_features = img2text(image_features)
     text_features = get_text_features(token_features, clip_model, clip_model.dtype, text)
 
