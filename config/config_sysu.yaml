@@ -86,6 +86,25 @@ stage3_ims_per_batch: 64
 middle_dim: 512
 n_layer: 2
 
+#stage4
+stage4_maxepochs: 120
+stage4_baselr: 0.00035
+stage4_laterlr_factor: 0.1
+stage4_weight_decay: 0.0005
+stage4_weight_decay_bias: 0.0005
+stage4_bias_lr_factor: 2
+
+stage4_steps: [30,50]
+stage4_gamma: 0.1
+stage4_warmup_factor: 0.01
+stage4_warmup_iters: 10
+stage4_warmup_method: 'linear'
+
+stage4_ims_per_batch: 128
+
+stage4_batch_size: 64
+stage4_num_instances: 1
+
 #log path
 logs_dir: save/logs/sysu/
 logs_time: 24-5-12

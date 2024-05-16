@@ -15,11 +15,12 @@ import torch.utils.data as data
 import torchvision.transforms as transforms
 from torch.backends import cudnn
 
+from train.train_4stage import do_train_stage4
 from train.train_3stage import do_train_stage3
 from train.train_2stage import do_train_stage2
 from util.loss.make_loss import make_loss
 from train.train_1stage import do_train_stage1
-from util.make_optimizer import make_optimizer_1stage, make_optimizer_2stage, make_optimizer_3stage
+from util.make_optimizer import make_optimizer_1stage, make_optimizer_2stage, make_optimizer_3stage, make_optimizer_4stage
 from util.optim.lr_scheduler import WarmupMultiStepLR
 from util.optim.scheduler_factory import create_scheduler
 from data.dataloader import Unlabeld_SYSUData_Pseudo, SYSUData_Stage1
@@ -124,9 +125,23 @@ def main_worker(args):
     # do_train_stage2(args, dataset, model, optimizer_2stage, scheduler_2stage, loss_func_rgb, loss_func_ir)
 
 
+    clip_model = load_clip_to_cpu(model.model_name, model.h_resolution, model.w_resolution, model.vision_stride_size)
+    clip_model.to("cuda")
 
-    do_train_stage3(args, model)
+    img2text = IMG2TEXT(embed_dim=1024,
+                        middle_dim=args.middle_dim,
+                        output_dim=clip_model.token_embedding.weight.shape[1],
+                        n_layer=args.n_layer)
+    img2text.to("cuda")
 
+    do_train_stage3(args, model, img2text, clip_model)
+
+
+    optimizer_4stage = make_optimizer_4stage(args, model)
+    scheduler_4stage = WarmupMultiStepLR(optimizer_4stage, args.stage4_steps, args.stage4_gamma, args.stage4_warmup_factor,
+                                         args.stage4_warmup_iters, args.stage4_warmup_method)
+
+    do_train_stage4(args, model,img2text, clip_model, optimizer_4stage, scheduler_4stage)
     end_time = time.monotonic()
     print('Total running time: ', timedelta(seconds=end_time - start_time))
 

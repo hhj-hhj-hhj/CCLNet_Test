@@ -53,10 +53,12 @@ def get_cluster_loader(dataset, batch_size, workers):
     return cluster_loader
 
 def do_train_stage3(args,
-                    model):
+                    model,
+                    img2text,
+                    clip_model):
     best_acc = 0
     device = 'cuda'
-    epochs = args.stage2_maxepochs
+    epochs = args.stage3_maxepochs
     start_time = time.monotonic()
 
     normalizer = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
@@ -107,15 +109,6 @@ def do_train_stage3(args,
     epochs = args.stage3_epochs
     num_classes_rgb = model.num_classes_rgb
     num_classes_ir = model.num_classes_ir
-
-
-    clip_model = load_clip_to_cpu(model.model_name, model.h_resolution, model.w_resolution, model.vision_stride_size)
-    clip_model.to("cuda")
-
-    img2text = IMG2TEXT(embed_dim=1024,
-                        middle_dim=args.middle_dim,
-                        output_dim=clip_model.token_embedding.weight.shape[1],
-                        n_layer=args.n_layer)
 
     model.eval()
     img2text.train()

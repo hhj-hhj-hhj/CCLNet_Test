@@ -39,6 +39,30 @@ def make_optimizer_2stage(args, model_net):
     optimizer_net = getattr(torch.optim, 'Adam')(params)
     return optimizer_net
 
+def make_optimizer_4stage(args, model_net):
+    params = []
+    keys = []
+    for key, value in model_net.named_parameters():
+        if "text_encoder" in key:
+            value.requires_grad_(False)
+            continue
+        if "prompt_learner" in key:
+            value.requires_grad_(False)
+            continue
+        if not value.requires_grad:
+            continue
+        lr = args.stage4_baselr
+        weight_decay = args.stage4_weight_decay
+        if "bias" in key:
+            lr = args.stage4_baselr * args.stage4_bias_lr_factor
+            weight_decay = args.stage4_weight_decay_bias
+
+        params += [{"params": [value], "lr": lr, "weight_decay": weight_decay}]
+        keys += [key]
+
+    optimizer_net = getattr(torch.optim, 'Adam')(params)
+    return optimizer_net
+
 def make_optimizer_2stage_later(args, model_net):
     params = []
     keys = []
