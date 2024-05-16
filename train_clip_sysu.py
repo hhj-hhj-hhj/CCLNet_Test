@@ -134,7 +134,7 @@ def main_worker(args):
                         n_layer=args.n_layer)
     img2text.to("cuda")
 
-    do_train_stage3(args, model, img2text, clip_model)
+    # do_train_stage3(args, model, img2text, clip_model)
 
 
     optimizer_4stage = make_optimizer_4stage(args, model)

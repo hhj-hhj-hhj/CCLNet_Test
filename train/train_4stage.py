@@ -108,7 +108,7 @@ def do_train_stage4(args,
     ])
 
     batch = args.stage4_ims_per_batch
-    epochs = args.stage4_epochs
+    epochs = args.stage4_maxepochs
     num_classes_rgb = model.num_classes_rgb
     num_classes_ir = model.num_classes_ir
 
@@ -194,10 +194,10 @@ def do_train_stage4(args,
                 ground_truth = torch.arange(len(image_features_rgb)).long()
                 ground_truth = ground_truth.to(device)
 
-                logits_rgb2rgb = image_features_rgb @ text_features_rgb
-                logits_rgb2ir = image_features_rgb @ text_features_ir
-                logits_ir2rgb = image_features_ir @ text_features_rgb
-                logits_ir2ir = image_features_ir @ text_features_ir
+                logits_rgb2rgb = image_features_rgb @ text_features_rgb.t()
+                logits_rgb2ir = image_features_rgb @ text_features_ir.t()
+                logits_ir2rgb = image_features_ir @ text_features_rgb.t()
+                logits_ir2ir = image_features_ir @ text_features_ir.t()
 
                 loss_rgb2rgb = loss_i2t(logits_rgb2rgb, ground_truth)
                 loss_rgb2ir = loss_i2t(logits_rgb2ir, ground_truth)
