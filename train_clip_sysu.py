@@ -141,7 +141,7 @@ def main_worker(args):
     scheduler_4stage = WarmupMultiStepLR(optimizer_4stage, args.stage4_steps, args.stage4_gamma, args.stage4_warmup_factor,
                                          args.stage4_warmup_iters, args.stage4_warmup_method)
 
-    do_train_stage4(args, model,img2text, clip_model, optimizer_4stage, scheduler_4stage)
+    do_train_stage4(args, model, img2text, clip_model, optimizer_4stage, scheduler_4stage)
     end_time = time.monotonic()
     print('Total running time: ', timedelta(seconds=end_time - start_time))
 
