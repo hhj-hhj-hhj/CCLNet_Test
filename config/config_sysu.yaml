@@ -102,8 +102,8 @@ stage4_warmup_method: 'linear'
 
 stage4_ims_per_batch: 128
 
-stage4_batch_size: 64
-stage4_num_instances: 1
+stage4_batch_size: 4
+stage4_num_instances: 16
 
 #log path
 logs_dir: save/logs/sysu/

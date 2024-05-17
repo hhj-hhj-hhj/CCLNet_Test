@@ -16,6 +16,7 @@ from data.dataloader import SYSUData_Stage2, RegDBData_Stage2, IterLoader, TestD
 from util.eval import tester
 from util.utils import IdentitySampler_nosk_stage4, GenIdx
 from model.img2text import get_loss_img2text, get_text_features
+from util.loss.softmax_loss import CrossEntropyLabelSmooth
 
 
 
@@ -28,7 +29,7 @@ def get_cluster_loader(dataset, batch_size, workers):
     )
     return cluster_loader
 
-def do_train_stage4(args,
+def do_train_stage4_v2(args,
                     model,
                     img2text,
                     clip_model,
@@ -82,6 +83,42 @@ def do_train_stage4(args,
         normalizer,
     ])
 
+    batch = args.stage4_ims_per_batch
+    num_classes_rgb = model.num_classes_rgb
+    num_classes_ir = model.num_classes_ir
+    i_ter_rgb = num_classes_rgb // batch
+    i_ter_ir = num_classes_ir // batch
+    left_rgb = num_classes_rgb-batch* (num_classes_rgb//batch)
+    left_ir = num_classes_ir-batch* (num_classes_ir//batch)
+    if left_rgb != 0 :
+        i_ter_rgb = i_ter_rgb+1
+    if left_ir != 0 :
+        i_ter_ir = i_ter_ir+1
+    text_features_rgb = []
+    text_features_ir = []
+    with torch.no_grad():
+        for i in range(i_ter_rgb):
+            if i+1 != i_ter_rgb:
+                l_list_rgb = torch.arange(i*batch, (i+1)* batch)
+            else:
+                l_list_rgb = torch.arange(i*batch, num_classes_rgb)
+            # with amp.autocast(enabled=True):
+            text_feature_rgb = model(get_text = True, label = l_list_rgb, modal=1)
+            text_features_rgb.append(text_feature_rgb.cpu())
+        text_features_rgb = torch.cat(text_features_rgb, 0).cuda()
+    with torch.no_grad():
+        for i in range(i_ter_ir):
+            if i+1 != i_ter_ir:
+                l_list_ir = torch.arange(i*batch, (i+1)* batch)
+            else:
+                l_list_ir = torch.arange(i*batch, num_classes_ir)
+            # with amp.autocast(enabled=True):
+            text_feature_ir = model(get_text = True, label = l_list_ir, modal=2)
+            text_features_ir.append(text_feature_ir.cpu())
+        text_features_ir = torch.cat(text_features_ir, 0).cuda()
+
+    del text_feature_rgb,text_feature_ir
+
     epochs = args.stage4_maxepochs
 
     model.to(device)
@@ -96,7 +133,8 @@ def do_train_stage4(args,
     losses_i2t_ir2rgb = AverageMeter()
     losses_i2t_ir2ir = AverageMeter()
 
-    loss_i2t = nn.CrossEntropyLoss()
+
+    # loss_i2t = nn.CrossEntropyLoss()
 
     end = time.time()
     if args.dataset == 'sysu':
@@ -128,6 +166,9 @@ def do_train_stage4(args,
 
     num_batches_per_epoch = len(trainloader)
 
+    loss_fn_rgb = CrossEntropyLabelSmooth(num_classes=len(trainset.train_color_label))
+    loss_fn_ir = CrossEntropyLabelSmooth(num_classes=len(trainset.train_thermal_label))
+
 
     for epoch in range(1, epochs + 1):
         # end = time.time()
@@ -144,6 +185,9 @@ def do_train_stage4(args,
             img_rgb = img_rgb.to(device)
             img_ir = img_ir.to(device)
 
+            label_rgb = label_rgb.to(device, dtype=torch.int64)
+            label_ir = label_ir.to(device, dtype=torch.int64)
+
             with amp.autocast(enabled=True):
 
                 # logit_scale = clip_model.logit_scale.exp()
@@ -152,39 +196,42 @@ def do_train_stage4(args,
                 score_rgb, feat_rgb, image_features_rgb, score_ir, feat_ir, image_features_ir = model(x1=img_rgb, x2=img_ir, modal=0)
 
                 with torch.no_grad():
+                # for param in img2text.parameters():
+                #     param.requires_grad = False
                     token_features_rgb = img2text(image_features_rgb)
                     token_features_ir = img2text(image_features_ir)
 
-                    text_features_rgb2rgb = get_text_features(token_features_rgb, clip_model, clip_model.dtype, "A visible photo of")
-                    text_features_rgb2ir = get_text_features(token_features_rgb, clip_model, clip_model.dtype, "An infrared photo of")
-                    text_features_ir2rgb = get_text_features(token_features_ir, clip_model, clip_model.dtype, "A visible photo of")
-                    text_features_ir2ir = get_text_features(token_features_ir, clip_model, clip_model.dtype, "An infrared photo of")
+                text_features_rgb2rgb = get_text_features(token_features_rgb, clip_model, clip_model.dtype, "A visible photo of")
+                text_features_rgb2ir = get_text_features(token_features_rgb, clip_model, clip_model.dtype, "An infrared photo of")
+                text_features_ir2rgb = get_text_features(token_features_ir, clip_model, clip_model.dtype, "A visible photo of")
+                text_features_ir2ir = get_text_features(token_features_ir, clip_model, clip_model.dtype, "An infrared photo of")
 
-                image_features_rgb = image_features_rgb / image_features_rgb.norm(dim=-1, keepdim=True)
-                image_features_ir = image_features_ir / image_features_ir.norm(dim=-1, keepdim=True)
+                # image_features_rgb = image_features_rgb / image_features_rgb.norm(dim=-1, keepdim=True)
+                # image_features_ir = image_features_ir / image_features_ir.norm(dim=-1, keepdim=True)
+                #
+                # text_features_rgb2rgb = text_features_rgb2rgb / text_features_rgb2rgb.norm(dim=-1, keepdim=True)
+                # text_features_rgb2ir = text_features_rgb2ir / text_features_rgb2ir.norm(dim=-1, keepdim=True)
+                # text_features_ir2rgb = text_features_ir2rgb / text_features_ir2rgb.norm(dim=-1, keepdim=True)
+                # text_features_ir2ir = text_features_ir2ir / text_features_ir2ir.norm(dim=-1, keepdim=True)
 
-                text_features_rgb2rgb = text_features_rgb2rgb / text_features_rgb2rgb.norm(dim=-1, keepdim=True)
-                text_features_rgb2ir = text_features_rgb2ir / text_features_rgb2ir.norm(dim=-1, keepdim=True)
-                text_features_ir2rgb = text_features_ir2rgb / text_features_ir2rgb.norm(dim=-1, keepdim=True)
-                text_features_ir2ir = text_features_ir2ir / text_features_ir2ir.norm(dim=-1, keepdim=True)
 
+                # ground_truth = torch.arange(len(image_features_rgb)).long()
+                # ground_truth = ground_truth.to(device)
 
-                ground_truth = torch.arange(len(image_features_rgb)).long()
-                ground_truth = ground_truth.to(device)
+                logits_rgb2rgb = text_features_rgb2rgb @ text_features_rgb.t()
+                logits_ir2rgb = text_features_ir2rgb @ text_features_rgb.t()
+                logits_rgb2ir = text_features_rgb2ir @ text_features_ir.t()
+                logits_ir2ir = text_features_ir2ir @ text_features_ir.t()
 
-                logits_rgb2rgb = image_features_rgb @ text_features_rgb2rgb.t()
-                logits_ir2rgb = image_features_rgb @ text_features_ir2rgb.t()
-                logits_rgb2ir = image_features_ir @ text_features_rgb2ir.t()
-                logits_ir2ir = image_features_ir @ text_features_ir2ir.t()
-
-                loss_rgb2rgb = loss_i2t(logits_rgb2rgb, ground_truth)
-                loss_rgb2ir = loss_i2t(logits_rgb2ir, ground_truth)
-                loss_ir2rgb = loss_i2t(logits_ir2rgb, ground_truth)
-                loss_ir2ir = loss_i2t(logits_ir2ir, ground_truth)
+                loss_rgb2rgb = loss_fn_rgb(logits_rgb2rgb, label_rgb)
+                loss_rgb2ir = loss_fn_ir(logits_rgb2ir, label_ir)
+                loss_ir2rgb = loss_fn_rgb(logits_ir2rgb, label_rgb)
+                loss_ir2ir = loss_fn_ir(logits_ir2ir, label_ir)
 
                 loss = (loss_rgb2rgb + loss_rgb2ir + loss_ir2rgb + loss_ir2ir) / 4
 
-
+            print(f"loss_rgb2rgb: {loss_rgb2rgb.item()}, \nloss_rgb2ir: {loss_rgb2ir.item()}, \nloss_ir2rgb: {loss_ir2rgb.item()}, \nloss_ir2ir: {loss_ir2ir.item()}")
+            print(f"loss: {loss.item()}")
             scaler.scale(loss).backward()
             scaler.step(optimizer)
             scaler.update()

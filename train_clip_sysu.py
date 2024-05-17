@@ -15,6 +15,8 @@ import torch.utils.data as data
 import torchvision.transforms as transforms
 from torch.backends import cudnn
 
+from train.train_2stage_v2 import do_train_stage2_v2
+from train.train_4stage_v2 import do_train_stage4_v2
 from train.train_4stage import do_train_stage4
 from train.train_3stage import do_train_stage3
 from train.train_2stage import do_train_stage2
@@ -106,12 +108,24 @@ def main_worker(args):
 
     # Create model
     model = build_model(args, n_color_class, n_thermal_class)
-    model.cuda()
+
+    clip_model = load_clip_to_cpu(model.model_name, model.h_resolution, model.w_resolution, model.vision_stride_size)
+    clip_model.to("cuda")
+
+    checkpoint = torch.load(args.resume_path)
+    model.load_state_dict(checkpoint['state_dict'])
+    model.to("cuda")
+
+    img2text = IMG2TEXT(embed_dim=1024,
+                        middle_dim=args.middle_dim,
+                        output_dim=clip_model.token_embedding.weight.shape[1],
+                        n_layer=args.n_layer)
+    img2text.to("cuda")
 
     # Optimizer
-    optimizer_1stage = make_optimizer_1stage(args, model)
-    scheduler_1stage = create_scheduler(optimizer_1stage, num_epochs=args.stage1_maxepochs, lr_min=args.stage1_lrmin,
-                                           warmup_lr_init=args.stage1_warmup_lrinit, warmup_t=args.stage1_warmup_epoch, noise_range=None)
+    # optimizer_1stage = make_optimizer_1stage(args, model)
+    # scheduler_1stage = create_scheduler(optimizer_1stage, num_epochs=args.stage1_maxepochs, lr_min=args.stage1_lrmin,
+    #                                        warmup_lr_init=args.stage1_warmup_lrinit, warmup_t=args.stage1_warmup_epoch, noise_range=None)
 
     # do_train_stage1(args, dataset, model, optimizer_1stage, scheduler_1stage)
 
@@ -122,26 +136,21 @@ def main_worker(args):
     loss_func_rgb = make_loss(args, num_classes=n_color_class)
     loss_func_ir = make_loss(args, num_classes=n_thermal_class)
 
+    do_train_stage2_v2(args, model, img2text, clip_model, optimizer_2stage, scheduler_2stage, loss_func_rgb, loss_func_ir)
     # do_train_stage2(args, dataset, model, optimizer_2stage, scheduler_2stage, loss_func_rgb, loss_func_ir)
 
 
-    clip_model = load_clip_to_cpu(model.model_name, model.h_resolution, model.w_resolution, model.vision_stride_size)
-    clip_model.to("cuda")
-
-    img2text = IMG2TEXT(embed_dim=1024,
-                        middle_dim=args.middle_dim,
-                        output_dim=clip_model.token_embedding.weight.shape[1],
-                        n_layer=args.n_layer)
-    img2text.to("cuda")
-
     # do_train_stage3(args, model, img2text, clip_model)
+
 
 
     optimizer_4stage = make_optimizer_4stage(args, model)
     scheduler_4stage = WarmupMultiStepLR(optimizer_4stage, args.stage4_steps, args.stage4_gamma, args.stage4_warmup_factor,
                                          args.stage4_warmup_iters, args.stage4_warmup_method)
 
-    do_train_stage4(args, model, img2text, clip_model, optimizer_4stage, scheduler_4stage)
+
+    # do_train_stage4(args, model, img2text, clip_model, optimizer_4stage, scheduler_4stage)
+    do_train_stage4_v2(args, model, img2text, clip_model, optimizer_4stage, scheduler_4stage)
     end_time = time.monotonic()
     print('Total running time: ', timedelta(seconds=end_time - start_time))
 
