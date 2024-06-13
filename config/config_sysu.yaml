@@ -32,7 +32,7 @@ weight_decay_bias: 0.0005
 steps: [30,50]
 gamma: 0.1
 step_size: 20
-resume_path: "save\\checkpoints\\uploadgithub_test_sysu_stage2_V1.pth"
+resume_path: "save\\checkpoints\\uploadgithub_test_sysu_stage1_add.pth"
 warmup_factor: 0.01
 warmup_iters: 10
 warmup_method: 'linear'
